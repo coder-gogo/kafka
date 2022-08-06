@@ -1,0 +1,8 @@
+pubspec.lock
+.pub/
+bin/
+doc/api/
+packages
+.packages
+notes.md
+coverage/
