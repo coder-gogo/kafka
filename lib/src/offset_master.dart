@@ -23,7 +23,7 @@ class OffsetMaster {
     return _fetch(topicPartitions, -1);
   }
 
-  Future<List<TopicOffset>> _fetch(Map<String, Set<int>> topicPartitions, int time, {refreshMetadata: false}) async {
+  Future<List<TopicOffset>> _fetch(Map<String, Set<int>> topicPartitions, int time, {refreshMetadata = false}) async {
     var meta = await session.getMetadata(topicPartitions.keys.toSet(), invalidateCache: refreshMetadata);
     var requests = new Map<Broker, OffsetRequest>();
     for (var topic in topicPartitions.keys) {

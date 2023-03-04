@@ -63,7 +63,7 @@ class KafkaSession {
   /// Also, if Kafka server is configured to auto-create topics you must
   /// explicitely specify topic name in metadata request, otherwise topic
   /// will not be created.
-  Future<ClusterMetadata> getMetadata(Set<String> topicNames, {bool invalidateCache: false}) async {
+  Future<ClusterMetadata> getMetadata(Set<String> topicNames, {bool invalidateCache = false}) async {
     if (topicNames.isEmpty) throw new ArgumentError.value(topicNames, 'topicNames', 'List of topic names can not be empty');
 
     if (invalidateCache) {
@@ -212,7 +212,7 @@ class KafkaSession {
       _sizes[hostPort] = -1;
 
       completer?.complete(response);
-      if (extra != null && extra is List && extra.isNotEmpty) {
+      if (extra != null && extra.isNotEmpty) {
         _handleData(hostPort, extra);
       }
     }

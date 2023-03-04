@@ -82,7 +82,7 @@ class ProduceEnvelope {
   ///
   /// You can optionally set [compression] codec which will be used to encode
   /// messages.
-  ProduceEnvelope(this.topicName, this.partitionId, this.messages, {this.compression: KafkaCompression.none}) {
+  ProduceEnvelope(this.topicName, this.partitionId, this.messages, {this.compression = KafkaCompression.none}) {
     messages.forEach((m) {
       if (m.attributes?.compression != KafkaCompression.none) {
         throw StateError('ProduceEnvelope: compression can not be set on individual messages in ProduceEnvelope, use ProduceEnvelope.compression instead.');

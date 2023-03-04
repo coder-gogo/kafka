@@ -53,7 +53,7 @@ class Consumer {
   /// will stop after exactly [limit] messages have been retrieved. If no
   /// specific limit is set it'll default to `-1` and will consume all incoming
   /// messages continuously.
-  Stream<MessageEnvelope> consume({int limit: -1}) {
+  Stream<MessageEnvelope> consume({int limit = -1}) {
     var controller = new _MessageStreamController(limit);
 
     Future<List<_ConsumerWorker>> list = _buildWorkers();

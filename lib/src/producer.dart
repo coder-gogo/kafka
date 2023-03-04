@@ -52,7 +52,7 @@ class Producer {
     return _produce(messages);
   }
 
-  Future<ProduceResult> _produce(List<ProduceEnvelope> messages, {bool refreshMetadata: false, int retryTimes: 3, Duration retryInterval: const Duration(seconds: 1)}) async {
+  Future<ProduceResult> _produce(List<ProduceEnvelope> messages, {bool refreshMetadata = false, int retryTimes = 3, Duration retryInterval = const Duration(seconds: 1)}) async {
     var topicNames = new Set<String>.from(messages.map((_) => _.topicName));
     var meta = await session.getMetadata(topicNames, invalidateCache: refreshMetadata);
 

@@ -20,7 +20,7 @@ class Fetcher {
   ///
   /// It will start from specified [topicOffsets]. If no [limit] is set it will
   /// run continuously consuming all incoming messages.
-  Stream<MessageEnvelope> fetch({int limit: -1}) {
+  Stream<MessageEnvelope> fetch({int limit = -1}) {
     var controller = _MessageStreamController(limit);
 
     Future<List<_FetcherWorker>> list = _buildWorkers(controller);

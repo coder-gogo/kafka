@@ -17,7 +17,7 @@ class ConsumerGroup {
   }
 
   /// Internal method for fetching offsets with retries.
-  Future<List<ConsumerOffset>> _fetchOffsets(Map<String, Set<int>> topicPartitions, {int retries: 0, bool refresh: false}) async {
+  Future<List<ConsumerOffset>> _fetchOffsets(Map<String, Set<int>> topicPartitions, {int retries = 0, bool refresh = false}) async {
     var host = await _getCoordinator(refresh: refresh);
     var request = OffsetFetchRequest(name, topicPartitions);
     var response = await session.send(host!, request);
@@ -50,7 +50,7 @@ class ConsumerGroup {
   }
 
   /// Internal method for commiting offsets with retries.
-  Future _commitOffsets(List<ConsumerOffset> offsets, int consumerGenerationId, String consumerId, {int retries: 0, bool refresh: false}) async {
+  Future _commitOffsets(List<ConsumerOffset> offsets, int consumerGenerationId, String consumerId, {int retries = 0, bool refresh = false}) async {
     var host = await _getCoordinator(refresh: refresh);
     var request = OffsetCommitRequest(name, offsets, consumerGenerationId, consumerId, -1); // TODO: allow to customize retention time.
     OffsetCommitResponse response = await session.send(host!, request);
@@ -97,7 +97,7 @@ class ConsumerGroup {
   }
 
   /// Returns instance of coordinator host for this consumer group.
-  Future<Broker?> _getCoordinator({bool refresh: false}) async {
+  Future<Broker?> _getCoordinator({bool refresh = false}) async {
     if (refresh) {
       _coordinatorHost = null;
     }
