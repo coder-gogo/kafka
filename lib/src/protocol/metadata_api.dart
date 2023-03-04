@@ -100,13 +100,13 @@ class PartitionMetadata {
     var partitionId = reader.readInt32();
     var leader = reader.readInt32();
     var replicas = reader.readArray(KafkaType.int32);
-    // var inSyncReplicas = reader.readArray(KafkaType.int32);
+    var inSyncReplicas = reader.readArray(KafkaType.int32);
 
     return PartitionMetadata._(
         errorCode,
         partitionId,
         leader,
         replicas as List<int>, // ignore: STRONG_MODE_DOWN_CAST_COMPOSITE
-        replicas as List<int>);
+        inSyncReplicas as List<int>);
   }
 }
