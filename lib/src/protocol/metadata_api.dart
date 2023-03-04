@@ -76,7 +76,7 @@ class TopicMetadata {
     var topicName = reader.readString();
     List partitions = reader.readArray(KafkaType.object, (reader) => PartitionMetadata._readFrom(reader));
     // ignore: STRONG_MODE_DOWN_CAST_COMPOSITE
-    return TopicMetadata._(errorCode, topicName, partitions as List<PartitionMetadata>);
+    return TopicMetadata._(errorCode, topicName, partitions.cast<PartitionMetadata>());
   }
 
   PartitionMetadata getPartition(int partitionId) => partitions.firstWhere((p) => p.partitionId == partitionId);
