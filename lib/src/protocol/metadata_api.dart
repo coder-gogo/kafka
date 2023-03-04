@@ -106,7 +106,7 @@ class PartitionMetadata {
         errorCode,
         partitionId,
         leader,
-        replicas as List<int>, // ignore: STRONG_MODE_DOWN_CAST_COMPOSITE
-        inSyncReplicas as List<int>);
+        replicas.cast<int>(), // ignore: STRONG_MODE_DOWN_CAST_COMPOSITE
+        inSyncReplicas.cast<int>());
   }
 }
