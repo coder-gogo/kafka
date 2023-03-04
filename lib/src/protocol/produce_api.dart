@@ -29,8 +29,7 @@ class ProduceRequest extends KafkaRequest {
 
   @override
   List<int> toBytes() {
-    var builder = new KafkaBytesBuilder.withRequestHeader(
-        apiKey, apiVersion, correlationId);
+    var builder = new KafkaBytesBuilder.withRequestHeader(apiKey, apiVersion, correlationId);
     builder.addInt16(requiredAcks);
     builder.addInt32(timeout);
 
@@ -39,8 +38,7 @@ class ProduceRequest extends KafkaRequest {
       if (!messageSets.containsKey(envelope.topicName)) {
         messageSets[envelope.topicName] = new Map<int, MessageSet>();
       }
-      messageSets[envelope.topicName]?[envelope.partitionId] =
-          new MessageSet.build(envelope);
+      messageSets[envelope.topicName]?[envelope.partitionId] = new MessageSet.build(envelope);
     }
 
     builder.addInt32(messageSets.length);
@@ -90,8 +88,7 @@ class ProduceResponse {
         var partitionId = reader.readInt32();
         var errorCode = reader.readInt16();
         var offset = reader.readInt64();
-        results.add(new TopicProduceResult._(
-            topicName, partitionId, errorCode, offset));
+        results.add(new TopicProduceResult._(topicName, partitionId, errorCode, offset));
         partitionCount--;
       }
       topicCount--;
@@ -115,10 +112,8 @@ class TopicProduceResult {
   /// Offset of the first message.
   final int offset;
 
-  TopicProduceResult._(
-      this.topicName, this.partitionId, this.errorCode, this.offset);
+  TopicProduceResult._(this.topicName, this.partitionId, this.errorCode, this.offset);
 
   @override
-  String toString() =>
-      'Topic: ${topicName}, partition: ${partitionId}, errorCode: ${errorCode}, offset: ${offset}';
+  String toString() => 'Topic: ${topicName}, partition: ${partitionId}, errorCode: ${errorCode}, offset: ${offset}';
 }

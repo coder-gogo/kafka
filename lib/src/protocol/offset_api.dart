@@ -27,22 +27,19 @@ class OffsetRequest extends KafkaRequest {
   /// * Specify -2 to receive the earliest available offset.
   ///
   /// [maxNumberOfOffsets] indicates max number of offsets to return.
-  void addTopicPartition(
-      String topicName, int partitionId, int time, int maxNumberOfOffsets) {
+  void addTopicPartition(String topicName, int partitionId, int time, int maxNumberOfOffsets) {
     if (_topics.containsKey(topicName) == false) {
       _topics[topicName] = [];
     }
 
-    _topics[topicName]?.add(
-        _PartitionOffsetRequestInfo(partitionId, time, maxNumberOfOffsets));
+    _topics[topicName]?.add(_PartitionOffsetRequestInfo(partitionId, time, maxNumberOfOffsets));
   }
 
   /// Converts this request into a binary representation according to Kafka
   /// protocol.
   @override
   List<int> toBytes() {
-    var builder = new KafkaBytesBuilder.withRequestHeader(
-        apiKey, apiVersion, correlationId);
+    var builder = new KafkaBytesBuilder.withRequestHeader(apiKey, apiVersion, correlationId);
     builder.addInt32(replicaId);
 
     builder.addInt32(_topics.length);
@@ -84,8 +81,7 @@ class _PartitionOffsetRequestInfo {
   /// How many offsets to return.
   final int maxNumberOfOffsets;
 
-  _PartitionOffsetRequestInfo(
-      this.partitionId, this.time, this.maxNumberOfOffsets);
+  _PartitionOffsetRequestInfo(this.partitionId, this.time, this.maxNumberOfOffsets);
 }
 
 /// Kafka OffsetResponse.
@@ -111,12 +107,7 @@ class OffsetResponse {
         var partitionId = reader.readInt32();
         var errorCode = reader.readInt16();
         var partitionOffsets = reader.readArray(KafkaType.int64);
-        offsets.add(TopicOffsets._(
-            topicName,
-            partitionId,
-            errorCode,
-            partitionOffsets
-                as List<int>)); // ignore: STRONG_MODE_DOWN_CAST_COMPOSITE
+        offsets.add(TopicOffsets._(topicName, partitionId, errorCode, partitionOffsets as List<int>)); // ignore: STRONG_MODE_DOWN_CAST_COMPOSITE
         partitionCount--;
       }
       count--;
@@ -134,6 +125,5 @@ class TopicOffsets {
   final int errorCode;
   final List<int> offsets;
 
-  TopicOffsets._(
-      this.topicName, this.partitionId, this.errorCode, this.offsets);
+  TopicOffsets._(this.topicName, this.partitionId, this.errorCode, this.offsets);
 }

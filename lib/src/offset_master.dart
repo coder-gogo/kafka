@@ -11,8 +11,7 @@ class OffsetMaster {
   OffsetMaster(this.session);
 
   /// Returns earliest offsets for specified topics and partitions.
-  Future<List<TopicOffset>> fetchEarliest(
-      Map<String, Set<int>> topicPartitions) {
+  Future<List<TopicOffset>> fetchEarliest(Map<String, Set<int>> topicPartitions) {
     return _fetch(topicPartitions, -2);
   }
 
@@ -24,11 +23,8 @@ class OffsetMaster {
     return _fetch(topicPartitions, -1);
   }
 
-  Future<List<TopicOffset>> _fetch(
-      Map<String, Set<int>> topicPartitions, int time,
-      {refreshMetadata: false}) async {
-    var meta = await session.getMetadata(topicPartitions.keys.toSet(),
-        invalidateCache: refreshMetadata);
+  Future<List<TopicOffset>> _fetch(Map<String, Set<int>> topicPartitions, int time, {refreshMetadata: false}) async {
+    var meta = await session.getMetadata(topicPartitions.keys.toSet(), invalidateCache: refreshMetadata);
     var requests = new Map<Broker, OffsetRequest>();
     for (var topic in topicPartitions.keys) {
       var partitions = topicPartitions[topic];
@@ -54,8 +50,7 @@ class OffsetMaster {
         }
 
         if (error.isError) throw error;
-        offsets
-            .add(new TopicOffset(o.topicName, o.partitionId, o.offsets.first));
+        offsets.add(new TopicOffset(o.topicName, o.partitionId, o.offsets.first));
       }
     }
 

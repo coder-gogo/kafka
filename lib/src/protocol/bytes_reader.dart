@@ -78,7 +78,7 @@ class KafkaBytesReader {
     }
   }
 
-  List readArray(KafkaType itemType, [objectReadHandler(KafkaBytesReader reader)?]) {
+  List readArray(KafkaType itemType, [dynamic objectReadHandler(KafkaBytesReader reader)?]) {
     var length = readInt32();
     var items = [];
     for (var i = 0; i < length; i++) {
@@ -109,7 +109,6 @@ class KafkaBytesReader {
           break;
       }
     }
-
     return items;
   }
 

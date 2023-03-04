@@ -18,13 +18,10 @@ class MessageSet {
     if (envelope.compression == KafkaCompression.none) {
       return MessageSet._(envelope.messages.asMap());
     } else {
-      if (envelope.compression == KafkaCompression.snappy)
-        throw ArgumentError(
-            'Snappy compression is not supported yet by the client.');
+      if (envelope.compression == KafkaCompression.snappy) throw ArgumentError('Snappy compression is not supported yet by the client.');
 
       var codec = GZipCodec();
-      var innerEnvelope = ProduceEnvelope(
-          envelope.topicName, envelope.partitionId, envelope.messages);
+      var innerEnvelope = ProduceEnvelope(envelope.topicName, envelope.partitionId, envelope.messages);
       var innerMessageSet = MessageSet.build(innerEnvelope);
       var value = codec.encode(innerMessageSet.toBytes());
       var attrs = MessageAttributes(KafkaCompression.gzip);
@@ -46,23 +43,18 @@ class MessageSet {
         var data = reader.readRaw(messageSize - 4);
         var actualCrc = Crc32.signed(data);
         if (actualCrc != crc) {
-          kafkaLogger.warning(
-              'Message CRC sum mismatch. Expected crc: ${crc}, actual: ${actualCrc}');
-          throw new MessageCrcMismatchError(
-              'Expected crc: ${crc}, actual: ${actualCrc}');
+          kafkaLogger.warning('Message CRC sum mismatch. Expected crc: ${crc}, actual: ${actualCrc}');
+          throw new MessageCrcMismatchError('Expected crc: ${crc}, actual: ${actualCrc}');
         }
         var messageReader = new KafkaBytesReader.fromBytes(data);
         var message = _readMessage(messageReader);
         if (message.attributes?.compression == KafkaCompression.none) {
           messages[offset] = message;
         } else {
-          if (message.attributes?.compression == KafkaCompression.snappy)
-            throw new ArgumentError(
-                'Snappy compression is not supported yet by the client.');
+          if (message.attributes?.compression == KafkaCompression.snappy) throw new ArgumentError('Snappy compression is not supported yet by the client.');
 
           var codec = new GZipCodec();
-          var innerReader =
-              new KafkaBytesReader.fromBytes(codec.decode(message.value));
+          var innerReader = new KafkaBytesReader.fromBytes(codec.decode(message.value));
           var innerMessageSet = new MessageSet.fromBytes(innerReader);
           for (var innerOffset in innerMessageSet.messages.keys) {
             messages[innerOffset] = innerMessageSet.messages[innerOffset]!;
@@ -72,8 +64,7 @@ class MessageSet {
         // According to spec server is allowed to return partial
         // messages, so we just ignore it here and exit the loop.
         var remaining = reader.length - reader.offset;
-        kafkaLogger.info(
-            'Encountered partial message. Expected message size: ${messageSize}, bytes left in buffer: ${remaining}, total buffer size ${reader.length}');
+        kafkaLogger.info('Encountered partial message. Expected message size: ${messageSize}, bytes left in buffer: ${remaining}, total buffer size ${reader.length}');
         break;
       }
     }

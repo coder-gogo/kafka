@@ -26,20 +26,15 @@ class OffsetCommitRequest extends KafkaRequest {
   /// Creates new instance of [OffsetCommitRequest].
   ///
   /// [host] must be current coordinator broker for [consumerGroup].
-  OffsetCommitRequest(this.consumerGroup, this.offsets,
-      this.consumerGroupGenerationId, this.consumerId, this.retentionTime)
-      : super();
+  OffsetCommitRequest(this.consumerGroup, this.offsets, this.consumerGroupGenerationId, this.consumerId, this.retentionTime) : super();
 
   @override
   List<int> toBytes() {
-    var builder = new KafkaBytesBuilder.withRequestHeader(
-        apiKey, apiVersion, correlationId);
+    var builder = new KafkaBytesBuilder.withRequestHeader(apiKey, apiVersion, correlationId);
 
     // TODO: replace groupBy with ListMultimap
     // ignore: STRONG_MODE_DOWN_CAST_COMPOSITE
-    Map<String, List<ConsumerOffset>> groupedByTopic =
-        groupBy(offsets, (o) => o.topicName) as Map<String,
-            List<ConsumerOffset>>; // ignore: STRONG_MODE_DOWN_CAST_COMPOSITE
+    Map<String, List<ConsumerOffset>> groupedByTopic = groupBy(offsets, (o) => o.topicName) as Map<String, List<ConsumerOffset>>; // ignore: STRONG_MODE_DOWN_CAST_COMPOSITE
     var timestamp = DateTime.now().millisecondsSinceEpoch;
     builder.addString(consumerGroup);
     builder.addInt32(consumerGroupGenerationId);

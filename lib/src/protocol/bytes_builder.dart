@@ -15,8 +15,7 @@ class KafkaBytesBuilder {
   KafkaBytesBuilder();
 
   /// Creates new builder and initializes buffer with proper request header.
-  KafkaBytesBuilder.withRequestHeader(
-      int apiKey, int apiVersion, int correlationId) {
+  KafkaBytesBuilder.withRequestHeader(int apiKey, int apiVersion, int correlationId) {
     addInt16(apiKey);
     addInt16(apiVersion);
     addInt32(correlationId);

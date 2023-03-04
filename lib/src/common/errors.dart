@@ -138,8 +138,7 @@ class KafkaServerError {
 
   bool get isOffsetsLoadInProgress => code == OffsetsLoadInProgress;
 
-  bool get isConsumerCoordinatorNotAvailable =>
-      code == ConsumerCoordinatorNotAvailable;
+  bool get isConsumerCoordinatorNotAvailable => code == ConsumerCoordinatorNotAvailable;
 
   bool get isNotCoordinatorForConsumer => code == NotCoordinatorForConsumer;
 }

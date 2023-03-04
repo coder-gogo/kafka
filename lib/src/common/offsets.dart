@@ -21,6 +21,5 @@ class ConsumerOffset {
   final String metadata;
   final int? errorCode;
 
-  ConsumerOffset(this.topicName, this.partitionId, this.offset, this.metadata,
-      [this.errorCode]);
+  ConsumerOffset(this.topicName, this.partitionId, this.offset, this.metadata, [this.errorCode]);
 }

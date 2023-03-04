@@ -35,8 +35,7 @@ class Fetcher {
         f.then((_) {
           remaining--;
           if (remaining == 0) {
-            kafkaLogger
-                .info('Fetcher: All workers are done. Closing the stream.');
+            kafkaLogger.info('Fetcher: All workers are done. Closing the stream.');
             controller.close();
           }
         });
@@ -46,17 +45,13 @@ class Fetcher {
     return controller.stream;
   }
 
-  Future<List<_FetcherWorker>> _buildWorkers(
-      _MessageStreamController controller) async {
+  Future<List<_FetcherWorker>> _buildWorkers(_MessageStreamController controller) async {
     var topicNames = Set<String>.from(topicOffsets.map((_) => _.topicName));
     var meta = await session.getMetadata(topicNames);
     var offsetsByBroker = Map<Broker, List<TopicOffset>>();
 
     topicOffsets.forEach((offset) {
-      var leader = meta
-          .getTopicMetadata(offset.topicName)
-          .getPartition(offset.partitionId)
-          .leader;
+      var leader = meta.getTopicMetadata(offset.topicName).getPartition(offset.partitionId).leader;
       var broker = meta.getBroker(leader);
       if (offsetsByBroker.containsKey(broker) == false) {
         offsetsByBroker[broker] = [];
@@ -81,12 +76,10 @@ class _FetcherWorker {
   final int maxWaitTime;
   final int minBytes;
 
-  _FetcherWorker(this.session, this.broker, this.controller,
-      this.startFromOffsets, this.maxWaitTime, this.minBytes);
+  _FetcherWorker(this.session, this.broker, this.controller, this.startFromOffsets, this.maxWaitTime, this.minBytes);
 
   Future run() async {
-    kafkaLogger.info(
-        'Fetcher: Running worker on broker ${broker.host}:${broker.port}');
+    kafkaLogger.info('Fetcher: Running worker on broker ${broker.host}:${broker.port}');
     var offsets = startFromOffsets.toList();
 
     while (controller.canAdd) {
@@ -97,8 +90,7 @@ class _FetcherWorker {
       for (var item in response.results) {
         for (var offset in item.messageSet.messages.keys) {
           var message = item.messageSet.messages[offset];
-          var envelope = new MessageEnvelope(
-              item.topicName, item.partitionId, offset, message!);
+          var envelope = new MessageEnvelope(item.topicName, item.partitionId, offset, message!);
           if (!controller.add(envelope)) {
             return;
           } else {
@@ -110,11 +102,8 @@ class _FetcherWorker {
           }
         }
         if (item.messageSet.messages.isNotEmpty) {
-          var nextOffset = new TopicOffset(item.topicName, item.partitionId,
-              item.messageSet.messages.keys.last + 1);
-          var previousOffset = offsets.firstWhere((o) =>
-              o.topicName == item.topicName &&
-              o.partitionId == item.partitionId);
+          var nextOffset = new TopicOffset(item.topicName, item.partitionId, item.messageSet.messages.keys.last + 1);
+          var previousOffset = offsets.firstWhere((o) => o.topicName == item.topicName && o.partitionId == item.partitionId);
           offsets.remove(previousOffset);
           offsets.add(nextOffset);
         }
@@ -130,8 +119,7 @@ class _FetcherWorker {
         var result = await offsetMaster.fetchEarliest({
           o.topicName: [o.partitionId].toSet()
         });
-        request.add(result.first.topicName, result.first.partitionId,
-            result.first.offset);
+        request.add(result.first.topicName, result.first.partitionId, result.first.offset);
       } else {
         request.add(o.topicName, o.partitionId, o.offset);
       }

@@ -90,8 +90,8 @@ class PartitionMetadata {
   final int partitionErrorCode;
   final int partitionId;
   final int leader;
-  final int replicas;
-  final int inSyncReplicas;
+  final List<int> replicas;
+  final List<int> inSyncReplicas;
 
   PartitionMetadata._(this.partitionErrorCode, this.partitionId, this.leader, this.replicas, this.inSyncReplicas);
 
@@ -99,14 +99,14 @@ class PartitionMetadata {
     var errorCode = reader.readInt16();
     var partitionId = reader.readInt32();
     var leader = reader.readInt32();
-    var replicas = reader.readInt32();
-    var inSyncReplicas = reader.readInt32();
+    var replicas = reader.readArray(KafkaType.int32);
+    var inSyncReplicas = reader.readArray(KafkaType.int32);
 
     return PartitionMetadata._(
         errorCode,
         partitionId,
         leader,
-        replicas, // ignore: STRONG_MODE_DOWN_CAST_COMPOSITE
-        inSyncReplicas);
+        replicas as List<int>, // ignore: STRONG_MODE_DOWN_CAST_COMPOSITE
+        inSyncReplicas as List<int>);
   }
 }
