@@ -1,8 +1,8 @@
 name: 'kafkabr'
-version: 1.0.0
+version: 1.0.1
 description: Kafka Client library for Dartlang
 homepage: https://coutoarmando.medium.com/
-repository: https://github.com/armando-couto/dart-kafka
+repository: https://github.com/armando-couto/kafkabr
 
 environment:
   sdk: '>=2.17.6 <3.0.0'
