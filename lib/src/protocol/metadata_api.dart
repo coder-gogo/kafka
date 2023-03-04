@@ -99,7 +99,7 @@ class PartitionMetadata {
   final int partitionId;
   final int leader;
   final List<dynamic> replicas;
-  final List<int> inSyncReplicas;
+  final List<dynamic> inSyncReplicas;
 
   PartitionMetadata._(this.partitionErrorCode, this.partitionId, this.leader,
       this.replicas, this.inSyncReplicas);
@@ -116,6 +116,6 @@ class PartitionMetadata {
         partitionId,
         leader,
         replicas as List<dynamic>, // ignore: STRONG_MODE_DOWN_CAST_COMPOSITE
-        inSyncReplicas as List<int>);
+        inSyncReplicas as List<dynamic>);
   }
 }
