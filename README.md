@@ -34,7 +34,7 @@ For now you can use git dependency in your `pubspec.yaml`:
 ```yaml
 dependencies:
   kafka:
-    git: https://github.com/dart-drivers/kafka.git
+    git: https://github.com/armando-couto/dart-kafka.git
 ```
 
 And then import it as usual:
