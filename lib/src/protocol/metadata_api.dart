@@ -98,23 +98,28 @@ class PartitionMetadata {
   final int partitionErrorCode;
   final int partitionId;
   final int leader;
-  final List<int> replicas;
-  final List<int> inSyncReplicas;
+  // final List<int> replicas;
+  // final List<int> inSyncReplicas;
 
-  PartitionMetadata._(this.partitionErrorCode, this.partitionId, this.leader, this.replicas, this.inSyncReplicas);
+  // PartitionMetadata._(this.partitionErrorCode, this.partitionId, this.leader, this.replicas, this.inSyncReplicas);
+  PartitionMetadata._(this.partitionErrorCode, this.partitionId, this.leader);
 
   factory PartitionMetadata._readFrom(KafkaBytesReader reader) {
     var errorCode = reader.readInt16();
     var partitionId = reader.readInt32();
     var leader = reader.readInt32();
-    var replicas = reader.readArray(KafkaType.int32);
-    var inSyncReplicas = reader.readArray(KafkaType.int32);
+    // var replicas = reader.readArray(KafkaType.int32);
+    // var inSyncReplicas = reader.readArray(KafkaType.int32);
 
     return PartitionMetadata._(
         errorCode,
         partitionId,
-        leader,
-        replicas as List<int>, // ignore: STRONG_MODE_DOWN_CAST_COMPOSITE
-        inSyncReplicas as List<int>);
+        leader);
+    // return PartitionMetadata._(
+    //     errorCode,
+    //     partitionId,
+    //     leader,
+    //     replicas as List<int>, // ignore: STRONG_MODE_DOWN_CAST_COMPOSITE
+    //     inSyncReplicas as List<int>);
   }
 }
