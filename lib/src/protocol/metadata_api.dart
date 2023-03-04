@@ -20,8 +20,7 @@ class MetadataRequest extends KafkaRequest {
 
   @override
   List<int> toBytes() {
-    var builder =
-        KafkaBytesBuilder.withRequestHeader(apiKey, apiVersion, correlationId);
+    var builder = KafkaBytesBuilder.withRequestHeader(apiKey, apiVersion, correlationId);
     Set<String> list = (this.topicNames is Set) ? this.topicNames! : Set();
     builder.addArray(list, KafkaType.string);
 
@@ -56,14 +55,11 @@ class MetadataResponse {
     reader.readInt32(); // correlationId
 
     var brokers = reader.readArray(KafkaType.object, (reader) {
-      return new Broker(
-          reader.readInt32(), reader.readString(), reader.readInt32());
+      return new Broker(reader.readInt32(), reader.readString(), reader.readInt32());
     });
 
-    var topicMetadata = reader.readArray(
-        KafkaType.object, (reader) => new TopicMetadata._readFrom(reader));
-    return new MetadataResponse._(new List<Broker>.from(brokers),
-        new List<TopicMetadata>.from(topicMetadata));
+    var topicMetadata = reader.readArray(KafkaType.object, (reader) => new TopicMetadata._readFrom(reader));
+    return new MetadataResponse._(new List<Broker>.from(brokers), new List<TopicMetadata>.from(topicMetadata));
   }
 }
 
@@ -71,24 +67,22 @@ class MetadataResponse {
 class TopicMetadata {
   final int errorCode;
   final String topicName;
-  // final List<PartitionMetadata> partitions;
+  final List<PartitionMetadata> partitions;
 
-  // TopicMetadata._(this.errorCode, this.topicName, this.partitions);
-  TopicMetadata._(this.errorCode, this.topicName);
+  TopicMetadata._(this.errorCode, this.topicName, this.partitions);
 
   factory TopicMetadata._readFrom(KafkaBytesReader reader) {
     var errorCode = reader.readInt16();
     var topicName = reader.readString();
-    // List partitions = reader.readArray(KafkaType.object, (reader) => PartitionMetadata._readFrom(reader));
+    List partitions = reader.readArray(KafkaType.object, (reader) => PartitionMetadata._readFrom(reader));
     // ignore: STRONG_MODE_DOWN_CAST_COMPOSITE
-    return TopicMetadata._(errorCode, topicName);
-    // return TopicMetadata._(errorCode, topicName, partitions as List<PartitionMetadata>);
+    return TopicMetadata._(errorCode, topicName, partitions as List<PartitionMetadata>);
   }
 
-  // PartitionMetadata getPartition(int partitionId) => partitions.firstWhere((p) => p.partitionId == partitionId);
+  PartitionMetadata getPartition(int partitionId) => partitions.firstWhere((p) => p.partitionId == partitionId);
 
   @override
-  String toString() => "TopicMetadata(errorCode: ${errorCode}, name: ${topicName}, partitions: ${1})";
+  String toString() => "TopicMetadata(errorCode: ${errorCode}, name: ${topicName}, partitions: ${partitions.length})";
 }
 
 /// Data structure representing partition metadata returned in MetadataResponse.
@@ -96,28 +90,23 @@ class PartitionMetadata {
   final int partitionErrorCode;
   final int partitionId;
   final int leader;
-  // final List<int> replicas;
-  // final List<int> inSyncReplicas;
+  final List<int> replicas;
+  final List<int> inSyncReplicas;
 
-  // PartitionMetadata._(this.partitionErrorCode, this.partitionId, this.leader, this.replicas, this.inSyncReplicas);
-  PartitionMetadata._(this.partitionErrorCode, this.partitionId, this.leader);
+  PartitionMetadata._(this.partitionErrorCode, this.partitionId, this.leader, this.replicas, this.inSyncReplicas);
 
   factory PartitionMetadata._readFrom(KafkaBytesReader reader) {
     var errorCode = reader.readInt16();
     var partitionId = reader.readInt32();
     var leader = reader.readInt32();
-    // var replicas = reader.readArray(KafkaType.int32);
-    // var inSyncReplicas = reader.readArray(KafkaType.int32);
+    var replicas = reader.readArray(KafkaType.int32);
+    var inSyncReplicas = reader.readArray(KafkaType.int32);
 
     return PartitionMetadata._(
         errorCode,
         partitionId,
-        leader);
-    // return PartitionMetadata._(
-    //     errorCode,
-    //     partitionId,
-    //     leader,
-    //     replicas as List<int>, // ignore: STRONG_MODE_DOWN_CAST_COMPOSITE
-    //     inSyncReplicas as List<int>);
+        leader,
+        replicas as List<int>, // ignore: STRONG_MODE_DOWN_CAST_COMPOSITE
+        inSyncReplicas as List<int>);
   }
 }
