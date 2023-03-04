@@ -6,3 +6,6 @@ packages
 .packages
 notes.md
 coverage/
+.idea/
+.fvm/flutter_sdk
+.dart_tool/
