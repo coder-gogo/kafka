@@ -70,8 +70,7 @@ class Consumer {
         f.then((_) {
           remaining--;
           if (remaining == 0) {
-            kafkaLogger
-                ?.info('Consumer: All workers are done. Closing stream.');
+            kafkaLogger.info('Consumer: All workers are done. Closing stream.');
             controller.close();
           }
         }, onError: (error, stackTrace) {
@@ -113,8 +112,7 @@ class Consumer {
           kafkaLogger.info('Consumer: worker finished.');
           remaining--;
           if (remaining == 0) {
-            kafkaLogger
-                ?.info('Consumer: All workers are done. Closing stream.');
+            kafkaLogger.info('Consumer: All workers are done. Closing stream.');
             controller.close();
           }
         }, onError: (error, stackTrace) {
