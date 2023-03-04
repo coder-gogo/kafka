@@ -71,26 +71,24 @@ class MetadataResponse {
 class TopicMetadata {
   final int errorCode;
   final String topicName;
-  final List<PartitionMetadata> partitions;
+  // final List<PartitionMetadata> partitions;
 
-  TopicMetadata._(this.errorCode, this.topicName, this.partitions);
+  // TopicMetadata._(this.errorCode, this.topicName, this.partitions);
+  TopicMetadata._(this.errorCode, this.topicName);
 
   factory TopicMetadata._readFrom(KafkaBytesReader reader) {
     var errorCode = reader.readInt16();
     var topicName = reader.readString();
-    List partitions = reader.readArray(
-        KafkaType.object, (reader) => PartitionMetadata._readFrom(reader));
+    // List partitions = reader.readArray(KafkaType.object, (reader) => PartitionMetadata._readFrom(reader));
     // ignore: STRONG_MODE_DOWN_CAST_COMPOSITE
-    return TopicMetadata._(
-        errorCode, topicName, partitions as List<PartitionMetadata>);
+    return TopicMetadata._(errorCode, topicName);
+    // return TopicMetadata._(errorCode, topicName, partitions as List<PartitionMetadata>);
   }
 
-  PartitionMetadata getPartition(int partitionId) =>
-      partitions.firstWhere((p) => p.partitionId == partitionId);
+  // PartitionMetadata getPartition(int partitionId) => partitions.firstWhere((p) => p.partitionId == partitionId);
 
   @override
-  String toString() =>
-      "TopicMetadata(errorCode: ${errorCode}, name: ${topicName}, partitions: ${partitions.length})";
+  String toString() => "TopicMetadata(errorCode: ${errorCode}, name: ${topicName}, partitions: ${1})";
 }
 
 /// Data structure representing partition metadata returned in MetadataResponse.
