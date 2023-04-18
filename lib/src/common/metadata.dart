@@ -50,8 +50,7 @@ class TopicPartition {
 
   @override
   bool operator ==(other) {
-    return ((other as TopicPartition).topicName == topicName &&
-        other.partitionId == partitionId);
+    return ((other as TopicPartition).topicName == topicName && other.partitionId == partitionId);
   }
 
   @override

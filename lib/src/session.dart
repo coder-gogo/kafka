@@ -41,16 +41,14 @@ class KafkaSession {
   /// In case of one of the hosts is temporarily unavailable the session will
   /// rotate them until sucessful response is returned. Error will be thrown
   /// when all of the default hosts are unavailable.
-  KafkaSession(List<ContactPoint> contactPoints)
-      : contactPoints = Queue.from(contactPoints);
+  KafkaSession(List<ContactPoint> contactPoints) : contactPoints = Queue.from(contactPoints);
 
   /// Returns names of all existing topics in the Kafka cluster.
   Future<Set<String>> listTopics() async {
     // TODO: actually rotate default hosts on failure.
     var contactPoint = _getCurrentContactPoint();
     var request = new MetadataRequest();
-    MetadataResponse response =
-        await _send(contactPoint.host, contactPoint.port, request);
+    MetadataResponse response = await _send(contactPoint.host, contactPoint.port, request);
 
     return response.topics.map((_) => _.topicName).toSet();
   }
@@ -65,11 +63,8 @@ class KafkaSession {
   /// Also, if Kafka server is configured to auto-create topics you must
   /// explicitely specify topic name in metadata request, otherwise topic
   /// will not be created.
-  Future<ClusterMetadata> getMetadata(Set<String> topicNames,
-      {bool invalidateCache: false}) async {
-    if (topicNames.isEmpty)
-      throw new ArgumentError.value(
-          topicNames, 'topicNames', 'List of topic names can not be empty');
+  Future<ClusterMetadata> getMetadata(Set<String> topicNames, {bool invalidateCache = false}) async {
+    if (topicNames.isEmpty) throw new ArgumentError.value(topicNames, 'topicNames', 'List of topic names can not be empty');
 
     if (invalidateCache) {
       _brokers = null;
@@ -78,11 +73,9 @@ class KafkaSession {
     // TODO: actually rotate default hosts on failure.
     var contactPoint = _getCurrentContactPoint();
 
-    var topicsToFetch =
-        topicNames.where((t) => !_topicsMetadata.keys.contains(t));
+    var topicsToFetch = topicNames.where((t) => !_topicsMetadata.keys.contains(t));
     if (topicsToFetch.length > 0) {
-      Future<MetadataResponse> responseFuture = _sendMetadataRequest(
-          topicsToFetch.toSet(), contactPoint.host, contactPoint.port);
+      Future<MetadataResponse> responseFuture = _sendMetadataRequest(topicsToFetch.toSet(), contactPoint.host, contactPoint.port);
       for (var name in topicsToFetch) {
         _topicsMetadata[name] = responseFuture.then((response) {
           return response.topics.firstWhere((_) => _.topicName == name);
@@ -98,26 +91,21 @@ class KafkaSession {
     return ClusterMetadata(brokers!, List.unmodifiable(metadata));
   }
 
-  Future<MetadataResponse> _sendMetadataRequest(
-      Set<String> topics, String host, int port) async {
+  Future<MetadataResponse> _sendMetadataRequest(Set<String> topics, String host, int port) async {
     var request = MetadataRequest(topics);
     MetadataResponse response = await _send(host, port, request);
 
-    TopicMetadata? topicWithError = response.topics
-        .firstWhereOrNull((_) => _.errorCode != KafkaServerError.NoError);
+    TopicMetadata? topicWithError = response.topics.firstWhereOrNull((_) => _.errorCode != KafkaServerError.NoError);
 
     if (topicWithError is TopicMetadata) {
       var retries = 1;
       var error = KafkaServerError(topicWithError.errorCode);
       while (error.isLeaderNotAvailable && retries < 5) {
-        var future = Future.delayed(
-            Duration(seconds: retries), () => _send(host, port, request));
+        var future = Future.delayed(Duration(seconds: retries), () => _send(host, port, request));
 
         response = await future;
-        topicWithError = response.topics
-            .firstWhereOrNull((_) => _.errorCode != KafkaServerError.NoError);
-        var errorCode =
-            (topicWithError is TopicMetadata) ? topicWithError.errorCode : 0;
+        topicWithError = response.topics.firstWhereOrNull((_) => _.errorCode != KafkaServerError.NoError);
+        var errorCode = (topicWithError is TopicMetadata) ? topicWithError.errorCode : 0;
         error = KafkaServerError(errorCode);
         retries++;
       }
@@ -137,19 +125,16 @@ class KafkaSession {
   ///
   /// It will attempt up to 5 retries (with linear delay) in order to fetch
   /// metadata.
-  Future<GroupCoordinatorResponse> getConsumerMetadata(
-      String consumerGroup) async {
+  Future<GroupCoordinatorResponse> getConsumerMetadata(String consumerGroup) async {
     // TODO: rotate default hosts.
     var contactPoint = _getCurrentContactPoint();
     var request = new GroupCoordinatorRequest(consumerGroup);
 
-    GroupCoordinatorResponse response =
-        await _send(contactPoint.host, contactPoint.port, request);
+    GroupCoordinatorResponse response = await _send(contactPoint.host, contactPoint.port, request);
     var retries = 1;
     var error = new KafkaServerError(response.errorCode);
     while (error.isConsumerCoordinatorNotAvailable && retries < 5) {
-      var future = new Future.delayed(new Duration(seconds: retries),
-          () => _send(contactPoint.host, contactPoint.port, request));
+      var future = new Future.delayed(new Duration(seconds: retries), () => _send(contactPoint.host, contactPoint.port, request));
 
       response = await future;
       error = new KafkaServerError(response.errorCode);
@@ -219,8 +204,7 @@ class KafkaSession {
       var header = buffer.sublist(4, 8);
       var reader = KafkaBytesReader.fromBytes(header);
       var correlationId = reader.readInt32();
-      var request = _inflightRequests.keys
-          .firstWhere((r) => r.correlationId == correlationId);
+      var request = _inflightRequests.keys.firstWhere((r) => r.correlationId == correlationId);
       var completer = _inflightRequests[request];
       var response = request.createResponse(buffer);
       _inflightRequests.remove(request);
@@ -228,7 +212,7 @@ class KafkaSession {
       _sizes[hostPort] = -1;
 
       completer?.complete(response);
-      if (extra != null && extra is List && extra.isNotEmpty) {
+      if (extra != null && extra.isNotEmpty) {
         _handleData(hostPort, extra);
       }
     }
@@ -283,9 +267,7 @@ class ClusterMetadata {
   ///
   /// If no topic is found will throw `StateError`.
   TopicMetadata getTopicMetadata(String topicName) {
-    return topics.firstWhere((topic) => topic.topicName == topicName,
-        orElse: () =>
-            throw new StateError('No topic ${topicName} found in metadata.'));
+    return topics.firstWhere((topic) => topic.topicName == topicName, orElse: () => throw new StateError('No topic ${topicName} found in metadata.'));
   }
 }
 

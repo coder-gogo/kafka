@@ -58,8 +58,7 @@ class Message {
   Message._(this.attributes, this.key, this.value);
 
   /// Creates new [Message].
-  factory Message(List<int> value,
-      {MessageAttributes? attributes, List<int>? key}) {
+  factory Message(List<int> value, {MessageAttributes? attributes, List<int>? key}) {
     attributes ??= MessageAttributes();
     return Message._(attributes, key, value);
   }
@@ -83,12 +82,10 @@ class ProduceEnvelope {
   ///
   /// You can optionally set [compression] codec which will be used to encode
   /// messages.
-  ProduceEnvelope(this.topicName, this.partitionId, this.messages,
-      {this.compression: KafkaCompression.none}) {
+  ProduceEnvelope(this.topicName, this.partitionId, this.messages, {this.compression = KafkaCompression.none}) {
     messages.forEach((m) {
       if (m.attributes?.compression != KafkaCompression.none) {
-        throw StateError(
-            'ProduceEnvelope: compression can not be set on individual messages in ProduceEnvelope, use ProduceEnvelope.compression instead.');
+        throw StateError('ProduceEnvelope: compression can not be set on individual messages in ProduceEnvelope, use ProduceEnvelope.compression instead.');
       }
     });
   }

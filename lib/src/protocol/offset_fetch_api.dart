@@ -19,8 +19,7 @@ class OffsetFetchRequest extends KafkaRequest {
 
   @override
   List<int> toBytes() {
-    var builder = new KafkaBytesBuilder.withRequestHeader(
-        apiKey, apiVersion, correlationId);
+    var builder = new KafkaBytesBuilder.withRequestHeader(apiKey, apiVersion, correlationId);
 
     builder.addString(consumerGroup);
     builder.addInt32(topics.length);
@@ -67,8 +66,7 @@ class OffsetFetchResponse {
         var offset = reader.readInt64();
         var metadata = reader.readString();
         var errorCode = reader.readInt16();
-        offsets.add(
-            new ConsumerOffset(topicName, id, offset, metadata, errorCode));
+        offsets.add(new ConsumerOffset(topicName, id, offset, metadata, errorCode));
         partitionCount--;
       }
       count--;

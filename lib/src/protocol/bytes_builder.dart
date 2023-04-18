@@ -15,8 +15,7 @@ class KafkaBytesBuilder {
   KafkaBytesBuilder();
 
   /// Creates new builder and initializes buffer with proper request header.
-  KafkaBytesBuilder.withRequestHeader(
-      int apiKey, int apiVersion, int correlationId) {
+  KafkaBytesBuilder.withRequestHeader(int apiKey, int apiVersion, int correlationId) {
     addInt16(apiKey);
     addInt16(apiVersion);
     addInt32(correlationId);
@@ -89,7 +88,6 @@ class KafkaBytesBuilder {
           break;
         case KafkaType.object:
           throw new StateError('Objects are not supported yet');
-          break;
       }
     }
   }
@@ -98,7 +96,7 @@ class KafkaBytesBuilder {
   ///
   /// Kafka Bytes type starts with int32 indicating size of the value following
   /// by actual value bytes.
-  void addBytes(List<int> value) {
+  void addBytes(List<int>? value) {
     if (value == null) {
       addInt32(-1);
     } else {

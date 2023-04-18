@@ -44,18 +44,16 @@ class Consumer {
   /// available.
   ///
   /// See [OffsetOutOfRangeBehavior] for details on each value.
-  OffsetOutOfRangeBehavior onOffsetOutOfRange =
-      OffsetOutOfRangeBehavior.resetToEarliest;
+  OffsetOutOfRangeBehavior onOffsetOutOfRange = OffsetOutOfRangeBehavior.resetToEarliest;
 
   /// Creates new consumer identified by [consumerGroup].
-  Consumer(this.session, this.consumerGroup, this.topicPartitions,
-      this.maxWaitTime, this.minBytes);
+  Consumer(this.session, this.consumerGroup, this.topicPartitions, this.maxWaitTime, this.minBytes);
 
   /// Consumes messages from Kafka. If [limit] is specified consuming
   /// will stop after exactly [limit] messages have been retrieved. If no
   /// specific limit is set it'll default to `-1` and will consume all incoming
   /// messages continuously.
-  Stream<MessageEnvelope> consume({int limit: -1}) {
+  Stream<MessageEnvelope> consume({int limit = -1}) {
     var controller = new _MessageStreamController(limit);
 
     Future<List<_ConsumerWorker>> list = _buildWorkers();
@@ -70,8 +68,7 @@ class Consumer {
         f.then((_) {
           remaining--;
           if (remaining == 0) {
-            kafkaLogger
-                ?.info('Consumer: All workers are done. Closing stream.');
+            kafkaLogger.info('Consumer: All workers are done. Closing stream.');
             controller.close();
           }
         }, onError: (error, stackTrace) {
@@ -106,15 +103,13 @@ class Consumer {
         return;
       }
       var remaining = workers.length;
-      var futures =
-          workers.map((w) => w.runBatched(controller, maxBatchSize)).toList();
+      var futures = workers.map((w) => w.runBatched(controller, maxBatchSize)).toList();
       futures.forEach((Future f) {
         f.then((_) {
           kafkaLogger.info('Consumer: worker finished.');
           remaining--;
           if (remaining == 0) {
-            kafkaLogger
-                ?.info('Consumer: All workers are done. Closing stream.');
+            kafkaLogger.info('Consumer: All workers are done. Closing stream.');
             controller.close();
           }
         }, onError: (error, stackTrace) {
@@ -148,9 +143,7 @@ class Consumer {
 
     List<_ConsumerWorker> workers = [];
     topicsByBroker.forEach((host, topics) {
-      var worker = new _ConsumerWorker(
-          session, host, topics, maxWaitTime, minBytes,
-          group: consumerGroup);
+      var worker = new _ConsumerWorker(session, host, topics, maxWaitTime, minBytes, group: consumerGroup);
       worker.onOffsetOutOfRange = onOffsetOutOfRange;
       workers.add(worker);
     });
@@ -161,15 +154,13 @@ class Consumer {
 
 class _MessageStreamController {
   final int limit;
-  final StreamController<MessageEnvelope> _controller =
-      new StreamController<MessageEnvelope>();
+  final StreamController<MessageEnvelope> _controller = new StreamController<MessageEnvelope>();
   int _added = 0;
   bool _cancelled = false;
 
   _MessageStreamController(this.limit);
 
-  bool get canAdd =>
-      (_cancelled == false && ((limit == -1) || (_added < limit)));
+  bool get canAdd => (_cancelled == false && ((limit == -1) || (_added < limit)));
 
   Stream<MessageEnvelope> get stream => _controller.stream;
 
@@ -206,16 +197,12 @@ class _ConsumerWorker {
   final int maxWaitTime;
   final int minBytes;
 
-  OffsetOutOfRangeBehavior onOffsetOutOfRange =
-      OffsetOutOfRangeBehavior.resetToEarliest;
+  OffsetOutOfRangeBehavior onOffsetOutOfRange = OffsetOutOfRangeBehavior.resetToEarliest;
 
-  _ConsumerWorker(this.session, this.host, this.topicPartitions,
-      this.maxWaitTime, this.minBytes,
-      {this.group});
+  _ConsumerWorker(this.session, this.host, this.topicPartitions, this.maxWaitTime, this.minBytes, {this.group});
 
   Future run(_MessageStreamController controller) async {
-    kafkaLogger
-        .info('Consumer: Running worker on host ${host.host}:${host.port}');
+    kafkaLogger.info('Consumer: Running worker on host ${host.host}:${host.port}');
 
     while (controller.canAdd) {
       var request = await _createRequest();
@@ -223,24 +210,19 @@ class _ConsumerWorker {
       FetchResponse response = await session.send(host, request);
       var didReset = await _checkOffsets(response);
       if (didReset) {
-        kafkaLogger.warning(
-            'Offsets were reset to ${onOffsetOutOfRange}. Forcing re-fetch.');
+        kafkaLogger.warning('Offsets were reset to ${onOffsetOutOfRange}. Forcing re-fetch.');
         continue;
       }
       for (var item in response.results) {
         for (var offset in item.messageSet.messages.keys) {
           var message = item.messageSet.messages[offset];
-          var envelope = MessageEnvelope(
-              item.topicName, item.partitionId, offset, message!);
+          var envelope = MessageEnvelope(item.topicName, item.partitionId, offset, message!);
           if (!controller.add(envelope)) {
             return;
           } else {
             var result = await envelope.result;
             if (result.status == _ProcessingStatus.commit) {
-              var offsets = [
-                new ConsumerOffset(item.topicName, item.partitionId, offset,
-                    result.commitMetadata)
-              ];
+              var offsets = [new ConsumerOffset(item.topicName, item.partitionId, offset, result.commitMetadata)];
               await group?.commitOffsets(offsets, -1, '');
             } else if (result.status == _ProcessingStatus.cancel) {
               controller.cancel();
@@ -253,16 +235,14 @@ class _ConsumerWorker {
   }
 
   Future runBatched(_BatchStreamController controller, int maxBatchSize) async {
-    kafkaLogger.info(
-        'Consumer: Running batch worker on host ${host.host}:${host.port}');
+    kafkaLogger.info('Consumer: Running batch worker on host ${host.host}:${host.port}');
 
     while (controller.canAdd) {
       var request = await _createRequest();
       FetchResponse response = await session.send(host, request);
       var didReset = await _checkOffsets(response);
       if (didReset) {
-        kafkaLogger.warning(
-            'Offsets were reset to ${onOffsetOutOfRange}. Forcing re-fetch.');
+        kafkaLogger.warning('Offsets were reset to ${onOffsetOutOfRange}. Forcing re-fetch.');
         continue;
       }
 
@@ -279,14 +259,12 @@ class _ConsumerWorker {
     }
   }
 
-  Iterable<BatchEnvelope> responseToBatches(
-      FetchResponse response, int maxBatchSize) sync* {
+  Iterable<BatchEnvelope> responseToBatches(FetchResponse response, int maxBatchSize) sync* {
     BatchEnvelope? batch;
     for (var item in response.results) {
       for (var offset in item.messageSet.messages.keys) {
         var message = item.messageSet.messages[offset];
-        var envelope = new MessageEnvelope(
-            item.topicName, item.partitionId, offset, message!);
+        var envelope = new MessageEnvelope(item.topicName, item.partitionId, offset, message!);
 
         if (batch == null) batch = new BatchEnvelope();
         if (batch.items.length < maxBatchSize) {
@@ -308,8 +286,7 @@ class _ConsumerWorker {
     var topicsToReset = Map<String, Set<int>>();
     for (var result in response.results) {
       if (result.errorCode == KafkaServerError.OffsetOutOfRange) {
-        kafkaLogger.warning(
-            'Consumer: received API error 1 for topic ${result.topicName}:${result.partitionId}');
+        kafkaLogger.warning('Consumer: received API error 1 for topic ${result.topicName}:${result.partitionId}');
         if (!topicsToReset.containsKey(result.topicName)) {
           topicsToReset[result.topicName] = Set();
         }
@@ -410,8 +387,7 @@ class MessageEnvelope {
 
 /// StreamController for batch consuming of messages.
 class _BatchStreamController {
-  final StreamController<BatchEnvelope> _controller =
-      new StreamController<BatchEnvelope>();
+  final StreamController<BatchEnvelope> _controller = new StreamController<BatchEnvelope>();
   bool _cancelled = false;
 
   bool get canAdd => (_cancelled == false);
@@ -485,8 +461,7 @@ class BatchEnvelope {
 
     List<ConsumerOffset> offsets = [];
     for (var key in grouped.keys) {
-      offsets.add(ConsumerOffset(
-          key.topicName, key.partitionId, grouped[key]!, commitMetadata));
+      offsets.add(ConsumerOffset(key.topicName, key.partitionId, grouped[key]!, commitMetadata));
     }
 
     return offsets;

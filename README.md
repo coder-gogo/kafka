@@ -1,8 +1,8 @@
 # Dart Kafka
 
-[![Build Status](https://travis-ci.org/pulyaevskiy/dart-kafka.svg?branch=master)](https://travis-ci.org/pulyaevskiy/dart-kafka)
-[![Coverage](https://codecov.io/gh/pulyaevskiy/dart-kafka/branch/master/graph/badge.svg)](https://codecov.io/gh/pulyaevskiy/dart-kafka)
-[![License](https://img.shields.io/badge/license-BSD--2-blue.svg)](https://raw.githubusercontent.com/pulyaevskiy/dart-kafka/master/LICENSE)
+[![Build Status](https://travis-ci.org/pulyaevskiy/kafkabr.svg?branch=master)](https://travis-ci.org/pulyaevskiy/kafkabr)
+[![Coverage](https://codecov.io/gh/pulyaevskiy/kafkabr/branch/master/graph/badge.svg)](https://codecov.io/gh/pulyaevskiy/kafkabr)
+[![License](https://img.shields.io/badge/license-BSD--2-blue.svg)](https://raw.githubusercontent.com/pulyaevskiy/kafkabr/master/LICENSE)
 
 Kafka client library written in Dart.
 
@@ -34,13 +34,13 @@ For now you can use git dependency in your `pubspec.yaml`:
 ```yaml
 dependencies:
   kafka:
-    git: https://github.com/dart-drivers/kafka.git
+    git: https://github.com/armando-couto/kafkabr.git
 ```
 
 And then import it as usual:
 
 ```dart
-import 'package:kafka/kafka.dart';
+import 'package:kafkabr/kafka.dart';
 ```
 
 ## Features
@@ -68,7 +68,7 @@ Requests are sent in parallel and all responses are aggregated in special
 ```dart
 // file:produce.dart
 import 'dart:io';
-import 'package:kafka/kafka.dart';
+import 'package:kafkabr/kafka.dart';
 
 main(List<String> arguments) async {
   var host = new ContactPoint('127.0.0.1', 9092);
@@ -128,7 +128,7 @@ Simplest example of a consumer:
 ```dart
 import 'dart:io';
 import 'dart:async';
-import 'package:kafka/kafka.dart';
+import 'package:kafkabr/kafka.dart';
 
 void main(List<String> arguments) async {
   var host = new ContactPoint('127.0.0.1', 9092);
@@ -154,7 +154,7 @@ It is also possible to consume messages in batches for improved efficiency:
 ```dart
 import 'dart:io';
 import 'dart:async';
-import 'package:kafka/kafka.dart';
+import 'package:kafkabr/kafka.dart';
 
 void main(List<String> arguments) async {
   var host = new ContactPoint('127.0.0.1', 9092);
@@ -207,3 +207,9 @@ to support earlier versions.
 ## License
 
 BSD-2
+
+### Publish
+```shell
+dart pub publish --dry-run
+dart pub publish
+```

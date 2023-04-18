@@ -18,8 +18,13 @@ export 'common.dart' hide groupBy, kafkaLogger;
 export 'protocol.dart' show TopicMetadata;
 
 part 'src/consumer.dart';
+
 part 'src/consumer_group.dart';
+
 part 'src/fetcher.dart';
+
 part 'src/offset_master.dart';
+
 part 'src/producer.dart';
+
 part 'src/session.dart';

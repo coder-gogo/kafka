@@ -30,20 +30,17 @@ class FetchRequest extends KafkaRequest {
 
   /// Adds [topicName] with [paritionId] to this FetchRequest. [fetchOffset]
   /// defines the offset to begin this fetch from.
-  void add(String topicName, int partitionId, int fetchOffset,
-      [int maxBytes = 65536]) {
+  void add(String topicName, int partitionId, int fetchOffset, [int maxBytes = 65536]) {
     //
     if (!_topics.containsKey(topicName)) {
       _topics[topicName] = [];
     }
-    _topics[topicName]
-        ?.add(_FetchPartitionInfo(partitionId, fetchOffset, maxBytes));
+    _topics[topicName]?.add(_FetchPartitionInfo(partitionId, fetchOffset, maxBytes));
   }
 
   @override
   List<int> toBytes() {
-    var builder = new KafkaBytesBuilder.withRequestHeader(
-        apiKey, apiVersion, correlationId);
+    var builder = new KafkaBytesBuilder.withRequestHeader(apiKey, apiVersion, correlationId);
 
     builder.addInt32(_replicaId);
     builder.addInt32(maxWaitTime);
@@ -116,8 +113,7 @@ class FetchResponse {
         var messageSet = new MessageSet.fromBytes(messageReader);
         if (errorCode != KafkaServerError.NoError) hasErrors = true;
 
-        results.add(new FetchResult(topicName, partitionId, errorCode,
-            highwaterMarkOffset, messageSet));
+        results.add(new FetchResult(topicName, partitionId, errorCode, highwaterMarkOffset, messageSet));
         partitionCount--;
       }
       count--;
@@ -136,6 +132,5 @@ class FetchResult {
   final int highwaterMarkOffset;
   final MessageSet messageSet;
 
-  FetchResult(this.topicName, this.partitionId, this.errorCode,
-      this.highwaterMarkOffset, this.messageSet);
+  FetchResult(this.topicName, this.partitionId, this.errorCode, this.highwaterMarkOffset, this.messageSet);
 }

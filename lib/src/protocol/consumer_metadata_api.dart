@@ -12,8 +12,7 @@ class GroupCoordinatorRequest extends KafkaRequest {
   /// Converts this request into byte list
   @override
   List<int> toBytes() {
-    var builder = new KafkaBytesBuilder.withRequestHeader(
-        apiKey, apiVersion, correlationId);
+    var builder = new KafkaBytesBuilder.withRequestHeader(apiKey, apiVersion, correlationId);
 
     builder.addString(consumerGroup);
 
@@ -36,12 +35,10 @@ class GroupCoordinatorResponse {
   final String coordinatorHost;
   final int coordinatorPort;
 
-  Broker get coordinator =>
-      new Broker(coordinatorId, coordinatorHost, coordinatorPort);
+  Broker get coordinator => new Broker(coordinatorId, coordinatorHost, coordinatorPort);
 
   /// Creates new instance of ConsumerMetadataResponse.
-  GroupCoordinatorResponse(this.errorCode, this.coordinatorId,
-      this.coordinatorHost, this.coordinatorPort);
+  GroupCoordinatorResponse(this.errorCode, this.coordinatorId, this.coordinatorHost, this.coordinatorPort);
 
   /// Creates response from provided data.
   factory GroupCoordinatorResponse.fromBytes(List<int> data) {
