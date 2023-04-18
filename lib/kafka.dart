@@ -1,30 +1,23 @@
-/// ## Apache Kafka client library for Dartlang
-///
-/// This library implements Kafka binary protocol and provides
-/// high-level abstractions for producing and consuming messages.
 library kafka;
 
-import 'dart:async';
-import 'dart:collection';
-import 'dart:io';
-
-import 'package:quiver/collection.dart';
-
-import 'common.dart';
-
-import 'protocol.dart';
-
-export 'common.dart' hide groupBy, kafkaLogger;
-export 'protocol.dart' show TopicMetadata;
-
-part 'src/consumer.dart';
-
-part 'src/consumer_group.dart';
-
-part 'src/fetcher.dart';
-
-part 'src/offset_master.dart';
-
-part 'src/producer.dart';
-
-part 'src/session.dart';
+export 'src/common.dart';
+export 'src/consumer.dart';
+export 'src/consumer_metadata_api.dart';
+export 'src/consumer_offset_api.dart';
+export 'src/errors.dart';
+export 'src/fetch_api.dart';
+export 'src/group_membership_api.dart';
+export 'src/kafka_service.dart';
+export 'src/list_offset_api.dart';
+export 'src/messages.dart';
+export 'src/metadata.dart';
+export 'src/metadata_api.dart';
+export 'src/model/kafka_config.dart';
+export 'src/offset_commit_api.dart';
+export 'src/offset_master.dart';
+export 'src/partition_assignor.dart';
+export 'src/produce_api.dart';
+export 'src/producer.dart';
+export 'src/serialization.dart';
+export 'src/session.dart';
+export 'src/versions_api.dart';

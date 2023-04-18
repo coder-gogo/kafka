@@ -1,141 +1,293 @@
-part of kafka;
+import 'dart:async';
 
-/// High-level Producer for Kafka.
+import 'package:logging/logging.dart';
+import 'package:pool/pool.dart';
+
+import 'common.dart';
+import 'messages.dart';
+import 'produce_api.dart';
+import 'serialization.dart';
+import 'session.dart';
+
+final Logger _logger = new Logger('Producer');
+
+/// Produces messages to Kafka cluster.
 ///
-/// Producer encapsulates logic for broker discovery when publishing messages to
-/// multiple topic-partitions. It will send as many ProduceRequests as needed
-/// based on leader assignment for corresponding topic-partitions.
-///
-/// Requests will be send in parallel and results will be aggregated in
-/// [ProduceResult].
-class Producer {
-  /// Instance of [KafkaSession] which is used to send requests to Kafka brokers.
-  final KafkaSession session;
+/// Automatically discovers leader brokers for each topic-partition to
+/// send messages to.
+abstract class Producer<K, V> implements StreamSink<ProducerRecord<K, V>> {
+  factory Producer(Serializer<K> keySerializer, Serializer<V> valueSerializer,
+          ProducerConfig config) =>
+      new _Producer(keySerializer, valueSerializer, config);
+}
 
-  /// How many acknowledgements the servers should receive before responding to the request.
-  ///
-  /// * If it is 0 the server will not send any response.
-  /// * If it is 1, the server will wait the data is written to the local log before sending a response.
-  /// * If it is -1 the server will block until the message is committed by all in sync replicas before sending a response.
-  /// * For any number > 1 the server will block waiting for this number of acknowledgements to occur
-  final int requiredAcks;
+class ProducerRecord<K, V> {
+  final String topic;
+  final int partition;
+  final K key;
+  final V value;
+  final int? timestamp;
 
-  /// Maximum time in milliseconds the server can await the receipt of the
-  /// number of acknowledgements in [requiredAcks].
-  final int timeout;
+  final Completer<ProduceResult> _completer = new Completer();
 
-  /// Creates new instance of [Producer].
-  ///
-  /// [requiredAcks] specifies how many acknowledgements the servers should
-  /// receive before responding to the request.
-  ///
-  /// [timeout] specifies maximum time in milliseconds the server can await
-  /// the receipt of the number of acknowledgements in [requiredAcks].
-  Producer(this.session, this.requiredAcks, this.timeout);
+  ProducerRecord(this.topic, this.partition, this.key, this.value,
+      {this.timestamp});
 
-  /// Sends messages to Kafka with "at least once" guarantee.
+  TopicPartition get topicPartition => new TopicPartition(topic, partition);
+
+  /// The result of publishing this record.
   ///
-  /// Producer will attempt to retry requests when Kafka server returns any of
-  /// the retriable errors. See [ProduceResult.hasRetriableErrors] for details.
-  ///
-  /// In case of such errors producer will attempt to re-send **all the messages**
-  /// and this may lead to duplicate records in the stream (therefore
-  /// "at least once" guarantee).
-  ///
-  /// If server returns errors which can not be retried then returned future will
-  /// be completed with [ProduceError]. One can still access `ProduceResult` from
-  /// it.
-  ///
-  /// In case of any non-protocol errors returned future will complete with actual
-  /// error that was thrown.
-  Future<ProduceResult> produce(List<ProduceEnvelope> messages) {
-    return _produce(messages);
+  /// Returned `Future` is completed with [ProduceResult] on success, otherwise
+  /// completed with the produce error.
+  Future<ProduceResult> get result => _completer.future;
+
+  void _complete(ProduceResult result) {
+    _completer.complete(result);
   }
 
-  Future<ProduceResult> _produce(List<ProduceEnvelope> messages, {bool refreshMetadata = false, int retryTimes = 3, Duration retryInterval = const Duration(seconds: 1)}) async {
-    var topicNames = new Set<String>.from(messages.map((_) => _.topicName));
-    var meta = await session.getMetadata(topicNames, invalidateCache: refreshMetadata);
-
-    var byBroker = new ListMultimap<Broker, ProduceEnvelope>.fromIterable(messages, key: (_) {
-      var leaderId = meta.getTopicMetadata(_.topicName).getPartition(_.partitionId).leader;
-      return meta.getBroker(leaderId);
-    });
-    kafkaLogger.fine('Producer: sending ProduceRequests');
-
-    Iterable<Future> futures = new List<Future>.from(byBroker.keys.map((broker) => session.send(broker, new ProduceRequest(requiredAcks, timeout, byBroker[broker]))));
-
-    var result = await Future.wait(futures).then((responses) => new ProduceResult.fromResponses(new List<ProduceResponse>.from(responses)));
-
-    if (!result.hasErrors) return result;
-    if (retryTimes <= 0) return result;
-
-    if (result.hasRetriableErrors) {
-      kafkaLogger.warning('Producer: server returned errors which can be retried. All returned errors are: ${result.errors}');
-      kafkaLogger.info('Producer: will retry after ${retryInterval.inSeconds} seconds.');
-      var retriesLeft = retryTimes - 1;
-      var newInterval = new Duration(seconds: retryInterval.inSeconds * 2);
-      return new Future<ProduceResult>.delayed(retryInterval, () => _produce(messages, refreshMetadata: true, retryTimes: retriesLeft, retryInterval: newInterval));
-    } else if (result.hasErrors) {
-      throw new ProduceError(result);
-    } else {
-      return result;
-    }
+  void _completeError(error) {
+    _completer.completeError(error);
   }
 }
 
-/// Exception thrown in case when server returned errors in response to
-/// `Producer.produce()`.
-class ProduceError implements Exception {
-  final ProduceResult result;
+class ProduceResult {
+  final TopicPartition topicPartition;
+  final int offset;
+  final int timestamp;
 
-  ProduceError(this.result);
+  ProduceResult(this.topicPartition, this.offset, this.timestamp);
 
   @override
-  toString() => 'ProduceError: ${result.errors}';
+  toString() =>
+      'ProduceResult{${topicPartition}, offset: $offset, timestamp: $timestamp}';
 }
 
-/// Result of producing messages with [Producer].
-class ProduceResult {
-  /// List of actual ProduceResponse objects returned by the server.
-  final List<ProduceResponse> responses;
+class _Producer<K, V> implements Producer<K, V> {
+  final ProducerConfig config;
+  final Serializer<K> keySerializer;
+  final Serializer<V> valueSerializer;
+  final Session session;
 
-  /// Indicates whether any of server responses contain errors.
-  final bool hasErrors;
+  final StreamController<ProducerRecord<K, V>> _controller =
+      new StreamController();
 
-  /// Collection of all unique errors returned by the server.
-  final Iterable<KafkaServerError> errors;
+  _Producer(this.keySerializer, this.valueSerializer, this.config)
+      : session = new Session(config.bootstrapServers!) {
+    _logger.info('Producer created with config:');
+    _logger.info(config);
+  }
 
-  /// Offsets for latest messages for each topic-partition assigned by the server.
-  final Map<String, Map<int, int>> offsets;
+  Future? _closeFuture;
+  @override
+  Future close() {
+    if (_closeFuture != null) return _closeFuture!;
 
-  ProduceResult._(this.responses, Set<KafkaServerError> errors, this.offsets)
-      : hasErrors = errors.isNotEmpty,
-        errors = new UnmodifiableListView(errors);
+    /// We first close our internal stream controller so that no new records
+    /// can be added. Then check if producing is still in progress and wait
+    /// for it to complete. And last, after producing is done we close
+    /// the session.
+    _closeFuture = _controller.close().then((_) {
+      return _produceFuture;
+    }).then((_) => session.close());
+    return _closeFuture!;
+  }
 
-  factory ProduceResult.fromResponses(Iterable<ProduceResponse> responses) {
-    var errors = new Set<KafkaServerError>();
-    var offsets = new Map<String, Map<int, int>>();
-    for (var r in responses) {
-      var er = r.results.where((_) => _.errorCode != KafkaServerError.NoError).map((result) => new KafkaServerError(result.errorCode));
-      errors.addAll(new Set<KafkaServerError>.from(er));
-      r.results.forEach((result) {
-        offsets.putIfAbsent(result.topicName, () => new Map());
-        offsets[result.topicName]?[result.partitionId] = result.offset;
-      });
+  @override
+  void add(ProducerRecord<K, V> event) {
+    _subscribe();
+    _controller.add(event);
+  }
+
+  @override
+  void addError(errorEvent, [StackTrace? stackTrace]) {
+    /// TODO: Should this throw instead to not allow errors?
+    /// Shouldn't really need to implement this method since stream
+    /// listener is internal to this class (?)
+    _subscribe();
+    _controller.addError(errorEvent, stackTrace);
+  }
+
+  @override
+  Future addStream(Stream<ProducerRecord<K, V>> stream) {
+    _subscribe();
+    return _controller.addStream(stream);
+  }
+
+  @override
+  Future get done => close();
+
+  StreamSubscription? _subscription;
+  void _subscribe() {
+    if (_subscription == null) {
+      _subscription = _controller.stream.listen(_onData, onDone: _onDone);
     }
-
-    return new ProduceResult._(responses.toList(), errors, offsets);
   }
 
-  /// Returns `true` if this result contains server error with specified [code].
-  bool hasError(int code) => errors.contains(new KafkaServerError(code));
-
-  /// Returns `true` if at least one server error in this result can be retried.
-  bool get hasRetriableErrors {
-    return hasError(KafkaServerError.LeaderNotAvailable) ||
-        hasError(KafkaServerError.NotLeaderForPartition) ||
-        hasError(KafkaServerError.RequestTimedOut) ||
-        hasError(KafkaServerError.NotEnoughReplicasCode) ||
-        hasError(KafkaServerError.NotEnoughReplicasAfterAppendCode);
+  List<ProducerRecord<K, V>> _buffer = [];
+  void _onData(ProducerRecord<K, V> event) {
+    _buffer.add(event);
+    _resume();
   }
+
+  void _onDone() {
+    _logger.fine('Done event received');
+  }
+
+  Future? _produceFuture;
+  void _resume() {
+    if (_produceFuture != null) return;
+    _logger.fine('New records arrived. Resuming producer.');
+    _produceFuture = _produce().whenComplete(() {
+      _logger.fine('No more new records. Pausing producer.');
+      _produceFuture = null;
+    });
+  }
+
+  Future _produce() async {
+    while (_buffer.isNotEmpty) {
+      var records = _buffer;
+      _buffer = [];
+      var leaders = await _groupByLeader(records);
+      var pools = new Map<Broker?, Pool>();
+      for (var leader in leaders.keys) {
+        pools[leader] = new Pool(config.maxInFlightRequestsPerConnection);
+        var requests = _buildRequests(leaders[leader]!);
+        for (var req in requests) {
+          pools[leader]!
+              .withResource(() => _send(leader!, req, leaders[leader]));
+        }
+      }
+      var futures = pools.values.map((_) => _.close());
+      await Future.wait(futures);
+    }
+  }
+
+  Future _send(Broker broker, ProduceRequest request,
+      List<ProducerRecord<K, V>>? records) {
+    return session.send(request, broker.host, broker.port).then((response) {
+      var offsets = Map.from(response.results.offsets!);
+      for (var rec in records!) {
+        var p = rec.topicPartition;
+        rec._complete(
+            new ProduceResult(p, offsets[p], response.results[p]!.timestamp));
+        offsets[p]++;
+      }
+    }).catchError((error) {
+      records!.forEach((_) {
+        _._completeError(error);
+      });
+    });
+  }
+
+  List<ProduceRequest> _buildRequests(List<ProducerRecord<K, V>> records) {
+    /// TODO: Split requests by max size.
+    var messages = new Map<String, Map<int, List<Message>>>();
+    for (var rec in records) {
+      var key = keySerializer.serialize(rec.key);
+      var value = valueSerializer.serialize(rec.value);
+      var timestamp =
+          rec.timestamp ?? new DateTime.now().millisecondsSinceEpoch;
+      var message = new Message(value, key: key, timestamp: timestamp);
+      messages.putIfAbsent(rec.topic, () => new Map());
+      messages[rec.topic]!.putIfAbsent(rec.partition, () => []);
+      messages[rec.topic]![rec.partition]!.add(message);
+    }
+    var request = new ProduceRequest(config.acks, config.timeoutMs, messages);
+    return [request];
+  }
+
+  Future<Map<Broker?, List<ProducerRecord<K, V>>>> _groupByLeader(
+      List<ProducerRecord<K, V>> records) async {
+    // var topics = records.map((_) => _.topic).toSet().toList(growable: false);
+    // var metadata = await session.metadata!.fetchTopics(topics);
+    var result = new Map<Broker?, List<ProducerRecord<K, V>>>();
+    for (var rec in records) {
+      // var broker = metadata.brokers[leader];
+      Uri uri = Uri.parse("https://${config.bootstrapServers![0]}");
+      Broker broker = Broker(0, uri.host, uri.port);
+      result.putIfAbsent(broker, () => []);
+      result[broker]!.add(rec);
+    }
+    return result;
+  }
+}
+
+/// Configuration for [Producer].
+///
+/// The only required setting which must be set is [bootstrapServers],
+/// other settings are optional and have default values. Refer
+/// to settings documentation for more details.
+class ProducerConfig {
+  /// A list of host/port pairs to use for establishing the initial
+  /// connection to the Kafka cluster. The client will make use of
+  /// all servers irrespective of which servers are specified here
+  /// for bootstrapping - this list only impacts the initial hosts
+  /// used to discover the full set of servers. The values should
+  /// be in the form `host:port`.
+  /// Since these servers are just used for the initial connection
+  /// to discover the full cluster membership (which may change
+  /// dynamically), this list need not contain the full set of
+  /// servers (you may want more than one, though, in case a
+  /// server is down).
+  final List<String>? bootstrapServers;
+
+  /// The number of acknowledgments the producer requires the leader to have
+  /// received before considering a request complete.
+  /// This controls the durability of records that are sent.
+  final int acks;
+
+  /// Controls the maximum amount of time the server
+  /// will wait for acknowledgments from followers to meet the acknowledgment
+  /// requirements the producer has specified with the [acks] configuration.
+  /// If the requested number of acknowledgments are not met when the timeout
+  /// elapses an error is returned by the server. This timeout is measured on the
+  /// server side and does not include the network latency of the request.
+  final int timeoutMs;
+
+  /// Setting a value greater than zero will cause the client to resend any
+  /// record whose send fails with a potentially transient error.
+  final int retries;
+
+  /// An id string to pass to the server when making requests.
+  /// The purpose of this is to be able to track the source of requests
+  /// beyond just ip/port by allowing a logical application name to be
+  /// included in server-side request logging.
+  final String clientId;
+
+  /// The maximum size of a request in bytes. This is also effectively a
+  /// cap on the maximum record size. Note that the server has its own
+  /// cap on record size which may be different from this.
+  final int maxRequestSize;
+
+  /// The maximum number of unacknowledged requests the client will
+  /// send on a single connection before blocking. Note that if this
+  /// setting is set to be greater than 1 and there are failed sends,
+  /// there is a risk of message re-ordering due to retries (i.e.,
+  /// if retries are enabled).
+  final int maxInFlightRequestsPerConnection;
+
+  ProducerConfig({
+    this.bootstrapServers,
+    this.acks = 1,
+    this.timeoutMs = 30000,
+    this.retries = 0,
+    this.clientId = '',
+    this.maxRequestSize = 1048576,
+    this.maxInFlightRequestsPerConnection = 5,
+  }) {
+    assert(bootstrapServers != null);
+  }
+
+  @override
+  String toString() => '''
+ProducerConfig(
+  bootstrapServers: $bootstrapServers, 
+  acks: $acks, 
+  timeoutMs: $timeoutMs,
+  retries: $retries,
+  clientId: $clientId,
+  maxRequestSize: $maxRequestSize,
+  maxInFlightRequestsPerConnection: $maxInFlightRequestsPerConnection
+)
+''';
 }

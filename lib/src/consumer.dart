@@ -1,469 +1,464 @@
-part of kafka;
+import 'dart:async';
+import 'package:logging/logging.dart';
+import 'consumer_streamiterator.dart';
+import 'common.dart';
+import 'consumer_group.dart';
+import 'consumer_offset_api.dart';
+import 'errors.dart';
+import 'fetch_api.dart';
+import 'group_membership_api.dart';
+import 'offset_master.dart';
+import 'serialization.dart';
+import 'session.dart';
+import 'util/group_by.dart';
 
-/// Determines behavior of [Consumer] when it receives `OffsetOutOfRange` API
-/// error.
-enum OffsetOutOfRangeBehavior {
-  /// Consumer will throw [KafkaServerError] with error code `1`.
-  throwError,
+final Logger _logger = new Logger('Consumer');
 
-  /// Consumer will reset it's offsets to the earliest available for particular
-  /// topic-partition.
-  resetToEarliest,
-
-  /// Consumer will reset it's offsets to the latest available for particular
-  /// topic-partition.
-  resetToLatest
-}
-
-/// High-level Kafka consumer class.
+/// Consumes messages from Kafka cluster.
 ///
-/// Provides convenience layer on top of Kafka's low-level APIs.
-class Consumer {
-  /// Instance of [KafkaSession] used to send requests.
-  final KafkaSession session;
+/// Consumer interacts with the server to allow multiple members of the same group
+/// load balance consumption by distributing topics and partitions evenly across
+/// all members.
+///
+/// ## Subscription and rebalance
+///
+/// Before it can start consuming messages, Consumer must [subscribe] to a set
+/// of topics. Every instance subscribes as a distinct member of it's [group].
+/// Each member receives assignment which contains a unique subset of topics and
+/// partitions it must consume. So if there is only one member then it gets
+/// assigned all topics and partitions when subscribed.
+///
+/// When another member wants to join the same group a rebalance is triggered by
+/// the Kafka server. During rebalance all members must rejoin the group and
+/// receive their updated assignments. Rebalance is handled transparently by
+/// this client and does not require any additional action.
+///
+/// ## Usage example
+///
+///     TODO: write an example
+abstract class Consumer<K, V> {
+  /// The consumer group name.
+  String get group;
 
-  /// Consumer group this consumer belongs to.
-  final ConsumerGroup consumerGroup;
-
-  /// Topics and partitions to consume.
-  final Map<String, Set<int>> topicPartitions;
-
-  /// Maximum amount of time in milliseconds to block waiting if insufficient
-  /// data is available at the time the request is issued.
-  final int maxWaitTime;
-
-  /// Minimum number of bytes of messages that must be available
-  /// to give a response.
-  final int minBytes;
-
-  /// Determines this consumer's strategy of handling `OffsetOutOfRange` API
-  /// errors.
+  /// Starts polling Kafka servers for new messages.
   ///
-  /// Default value is `resetToEarliest` which will automatically reset offset
-  /// of ConsumerGroup for particular topic-partition to the earliest offset
-  /// available.
+  /// Must first call [subscribe] to indicate which topics must be consumed.
+  StreamIterator<ConsumerRecords<K, V>?>? poll();
+
+  /// Subscribe this consumer to a set of [topics].
   ///
-  /// See [OffsetOutOfRangeBehavior] for details on each value.
-  OffsetOutOfRangeBehavior onOffsetOutOfRange = OffsetOutOfRangeBehavior.resetToEarliest;
+  /// This function evaluates lazily, subscribing to the specified topics only
+  /// when [poll] is called.
+  void subscribe(List<String> topics);
 
-  /// Creates new consumer identified by [consumerGroup].
-  Consumer(this.session, this.consumerGroup, this.topicPartitions, this.maxWaitTime, this.minBytes);
-
-  /// Consumes messages from Kafka. If [limit] is specified consuming
-  /// will stop after exactly [limit] messages have been retrieved. If no
-  /// specific limit is set it'll default to `-1` and will consume all incoming
-  /// messages continuously.
-  Stream<MessageEnvelope> consume({int limit = -1}) {
-    var controller = new _MessageStreamController(limit);
-
-    Future<List<_ConsumerWorker>> list = _buildWorkers();
-    list.then((workers) {
-      if (workers.isEmpty) {
-        controller.close();
-        return;
-      }
-      var remaining = workers.length;
-      var futures = workers.map((w) => w.run(controller)).toList();
-      futures.forEach((Future f) {
-        f.then((_) {
-          remaining--;
-          if (remaining == 0) {
-            kafkaLogger.info('Consumer: All workers are done. Closing stream.');
-            controller.close();
-          }
-        }, onError: (error, stackTrace) {
-          controller.addError(error, stackTrace);
-        });
-      });
-    }, onError: (error, stackTrace) {
-      controller.addError(error, stackTrace);
-    });
-
-    return controller.stream;
-  }
-
-  /// Consume messages in batches.
+  /// Unsubscribes from all currently assigned partitions and leaves
+  /// consumer group.
   ///
-  /// This will create a stream of [BatchEnvelope] objects. Each batch
-  /// will contain up to [maxBatchSize] of `MessageEnvelope`s.
+  /// Unsubscribe triggers rebalance of all existing members of this consumer
+  /// group.
+  Future? unsubscribe();
+
+  /// Commits current offsets to the server.
+  Future commit();
+
+  /// Seek to the first offset for all of the currently assigned partitions.
   ///
-  /// Note that calling `commit`, `ack`, or `cancel` on individual message
-  /// envelope will take no effect. Instead one should use corresponding methods
-  /// on the BatchEnvelope itself.
+  /// This function evaluates lazily, seeking to the first offset in all
+  /// partitions only when [poll] is called.
   ///
-  /// Currently batches are formed on per broker basis, meaning each batch will
-  /// always contain messages from one particular broker.
-  Stream<BatchEnvelope> batchConsume(int maxBatchSize) {
-    var controller = new _BatchStreamController();
+  /// Requires active subscription, see [subscribe] for more details.
+  void seekToBeginning();
 
-    Future<List<_ConsumerWorker>> list = _buildWorkers();
-    list.then((workers) {
-      if (workers.isEmpty) {
-        controller.close();
-        return;
-      }
-      var remaining = workers.length;
-      var futures = workers.map((w) => w.runBatched(controller, maxBatchSize)).toList();
-      futures.forEach((Future f) {
-        f.then((_) {
-          kafkaLogger.info('Consumer: worker finished.');
-          remaining--;
-          if (remaining == 0) {
-            kafkaLogger.info('Consumer: All workers are done. Closing stream.');
-            controller.close();
-          }
-        }, onError: (error, stackTrace) {
-          controller.addError(error, stackTrace);
-        });
-      });
-    }, onError: (error, stackTrace) {
-      controller.addError(error, stackTrace);
-    });
+  /// Seek to the last offset for all of the currently assigned partitions.
+  ///
+  /// This function evaluates lazily, seeking to the last offset in all
+  /// partitions only when [poll] is called.
+  ///
+  /// Requires active subscription, see [subscribe] for more details.
+  void seekToEnd();
 
-    return controller.stream;
-  }
-
-  Future<List<_ConsumerWorker>> _buildWorkers() async {
-    var meta = await session.getMetadata(topicPartitions.keys.toSet());
-    var topicsByBroker = Map<Broker, Map<String, Set<int>>>();
-
-    topicPartitions.forEach((topic, partitions) {
-      partitions.forEach((p) {
-        var leader = meta.getTopicMetadata(topic).getPartition(p).leader;
-        var broker = meta.getBroker(leader);
-        if (topicsByBroker.containsKey(broker) == false) {
-          topicsByBroker[broker] = Map<String, Set<int>>();
-        }
-        if (topicsByBroker[broker]?.containsKey(topic) == false) {
-          topicsByBroker[broker]?[topic] = Set<int>();
-        }
-        topicsByBroker[broker]?[topic]?.add(p);
-      });
-    });
-
-    List<_ConsumerWorker> workers = [];
-    topicsByBroker.forEach((host, topics) {
-      var worker = new _ConsumerWorker(session, host, topics, maxWaitTime, minBytes, group: consumerGroup);
-      worker.onOffsetOutOfRange = onOffsetOutOfRange;
-      workers.add(worker);
-    });
-
-    return workers;
+  factory Consumer(String group, Deserializer<K> keyDeserializer,
+      Deserializer<V> valueDeserializer, Session session) {
+    return new _ConsumerImpl(
+        group, keyDeserializer, valueDeserializer, session);
   }
 }
 
-class _MessageStreamController {
-  final int limit;
-  final StreamController<MessageEnvelope> _controller = new StreamController<MessageEnvelope>();
-  int _added = 0;
-  bool _cancelled = false;
+/// Defines type of consumer state function.
+typedef Future _ConsumerState();
 
-  _MessageStreamController(this.limit);
+/// Default implementation of Kafka consumer.
+///
+/// Implements a finite state machine which is started by a call to [poll].
+class _ConsumerImpl<K, V> implements Consumer<K, V> {
+  static const int DEFAULT_MAX_BYTES = 36864;
+  static const int DEFAULT_MAX_WAIT_TIME = 10000;
+  static const int DEFAULT_MIN_BYTES = 1;
 
-  bool get canAdd => (_cancelled == false && ((limit == -1) || (_added < limit)));
+  final Session session;
+  final Deserializer<K> keyDeserializer;
+  final Deserializer<V> valueDeserializer;
+  final int requestMaxBytes;
 
-  Stream<MessageEnvelope> get stream => _controller.stream;
+  final ConsumerGroup _group;
 
-  /// Attempts to add [event] to the stream.
-  /// Returns true if adding event succeeded, false otherwise.
-  bool add(MessageEnvelope event) {
-    if (canAdd) {
-      _controller.add(event);
-      _added++;
-      return true;
-    }
-    return false;
+  _ConsumerState? _activeState;
+
+  _ConsumerImpl(
+      String group, this.keyDeserializer, this.valueDeserializer, this.session,
+      {int? requestMaxBytes})
+      : _group = new ConsumerGroup(session, group),
+        requestMaxBytes = requestMaxBytes ?? DEFAULT_MAX_BYTES;
+
+  /// The consumer group name.
+  String get group => _group.name;
+
+  GroupSubscription? _subscription;
+
+  /// Current consumer subscription.
+  GroupSubscription? get subscription => _subscription;
+
+  /// List of topics to subscribe to when joining the group.
+  ///
+  /// Set by initial call to [subscribe] and used during initial
+  /// subscribe and possible resubscriptions.
+  List<String>? _topics;
+
+  StreamController<ConsumerRecords<K, V>>? _streamController;
+  ConsumerStreamIterator<K, V>? _streamIterator;
+
+  /// Whether user canceled stream subscription.
+  ///
+  /// This triggers shutdown of polling phase.
+  bool _isCanceled = false;
+
+  /// Whether resubscription is required due to rebalance event received from
+  /// the server.
+  bool _resubscriptionNeeded = false;
+
+  @override
+  void subscribe(List<String> topics) {
+    assert(_subscription == null, 'Already subscribed.');
+    _topics = new List.from(topics, growable: false);
   }
 
-  void addError(Object error, [StackTrace? stackTrace]) {
-    _controller.addError(error, stackTrace);
+  /// State of this consumer during (re)subscription.
+  ///
+  /// Consumer enters this state initially when listener is added to the stream
+  /// and may re-enter this state in case of a rebalance event triggerred by
+  /// the server.
+  Future _resubscribeState() {
+    _logger
+        .info('Subscribing to topics ${_topics} as a member of group $group');
+    var protocols = [new GroupProtocol.roundrobin(0, _topics!.toSet())];
+    return _group.join(30000, 3000, '', 'consumer', protocols).then((result) {
+      // TODO: resume heartbeat timer.
+      _subscription = result;
+      _resubscriptionNeeded = false;
+      _logger.info('Subscription result: ${subscription}.');
+      // Switch to polling state
+      _activeState = _pollState;
+    });
   }
 
-  void cancel() {
-    _cancelled = true;
+  @override
+  StreamIterator<ConsumerRecords<K, V>?>? poll() {
+    assert(_topics != null,
+        'No topics set for subscription. Must first call subscribe().');
+    assert(_streamController == null, 'Already polling.');
+
+    _streamController = new StreamController<ConsumerRecords<K, V>>(
+        onListen: onListen, onCancel: onCancel);
+    _streamIterator =
+        new ConsumerStreamIterator<K, V>(_streamController!.stream);
+
+    return _streamIterator;
   }
 
-  void close() {
-    _controller.close();
-  }
-}
-
-/// Worker responsible for fetching messages from one particular Kafka broker.
-class _ConsumerWorker {
-  final KafkaSession session;
-  final Broker host;
-  final ConsumerGroup? group;
-  final Map<String, Set<int>> topicPartitions;
-  final int maxWaitTime;
-  final int minBytes;
-
-  OffsetOutOfRangeBehavior onOffsetOutOfRange = OffsetOutOfRangeBehavior.resetToEarliest;
-
-  _ConsumerWorker(this.session, this.host, this.topicPartitions, this.maxWaitTime, this.minBytes, {this.group});
-
-  Future run(_MessageStreamController controller) async {
-    kafkaLogger.info('Consumer: Running worker on host ${host.host}:${host.port}');
-
-    while (controller.canAdd) {
-      var request = await _createRequest();
-      kafkaLogger.fine('Consumer: Sending fetch request to ${host}.');
-      FetchResponse response = await session.send(host, request);
-      var didReset = await _checkOffsets(response);
-      if (didReset) {
-        kafkaLogger.warning('Offsets were reset to ${onOffsetOutOfRange}. Forcing re-fetch.');
-        continue;
-      }
-      for (var item in response.results) {
-        for (var offset in item.messageSet.messages.keys) {
-          var message = item.messageSet.messages[offset];
-          var envelope = MessageEnvelope(item.topicName, item.partitionId, offset, message!);
-          if (!controller.add(envelope)) {
-            return;
-          } else {
-            var result = await envelope.result;
-            if (result.status == _ProcessingStatus.commit) {
-              var offsets = [new ConsumerOffset(item.topicName, item.partitionId, offset, result.commitMetadata)];
-              await group?.commitOffsets(offsets, -1, '');
-            } else if (result.status == _ProcessingStatus.cancel) {
-              controller.cancel();
-              return;
-            }
-          }
-        }
-      }
-    }
-  }
-
-  Future runBatched(_BatchStreamController controller, int maxBatchSize) async {
-    kafkaLogger.info('Consumer: Running batch worker on host ${host.host}:${host.port}');
-
-    while (controller.canAdd) {
-      var request = await _createRequest();
-      FetchResponse response = await session.send(host, request);
-      var didReset = await _checkOffsets(response);
-      if (didReset) {
-        kafkaLogger.warning('Offsets were reset to ${onOffsetOutOfRange}. Forcing re-fetch.');
-        continue;
-      }
-
-      for (var batch in responseToBatches(response, maxBatchSize)) {
-        if (!controller.add(batch)) return;
-        var result = await batch.result;
-        if (result.status == _ProcessingStatus.commit) {
-          await group?.commitOffsets(batch.offsetsToCommit.toList(), -1, '');
-        } else if (result.status == _ProcessingStatus.cancel) {
-          controller.cancel();
-          return;
-        }
-      }
+  /// Starts execution of state machine.
+  ///
+  /// Returned future completes whenever there is no active state
+  /// (execution completed) or unhandled error occured.
+  Future _run() async {
+    while (_activeState != null) {
+      await _activeState!();
     }
   }
 
-  Iterable<BatchEnvelope> responseToBatches(FetchResponse response, int maxBatchSize) sync* {
-    BatchEnvelope? batch;
-    for (var item in response.results) {
-      for (var offset in item.messageSet.messages.keys) {
-        var message = item.messageSet.messages[offset];
-        var envelope = new MessageEnvelope(item.topicName, item.partitionId, offset, message!);
+  /// Only set in initial stream controler. Rebalance events create new streams
+  /// but we don't set onListen callback on those since our state machine
+  /// is already running.
+  void onListen() {
+    // Start polling only after there is active listener.
+    _activeState = _resubscribeState;
+    _run().catchError((error, stackTrace) {
+      _streamController!.addError(error, stackTrace);
+    }).whenComplete(() {
+      // TODO: ensure cleanup here, e.g. shutdown heartbeats
+      var closeFuture = _streamController!.close();
+      _streamController = null;
+      _streamIterator = null;
+      return closeFuture;
+    });
+  }
 
-        if (batch == null) batch = new BatchEnvelope();
-        if (batch.items.length < maxBatchSize) {
-          batch.items.add(envelope);
-        }
-        if (batch.items.length == maxBatchSize) {
-          yield batch;
-          batch = null;
-        }
+  void onCancel() {
+    _isCanceled = true;
+    // Listener canceled subscription so we need to drop any records waiting
+    // to be processed.
+    _waitingRecords.values.forEach((_) {
+      _.ack();
+    });
+  }
+
+  /// Poll state of this consumer's state machine.
+  ///
+  /// Consumer enters this state when [poll] is executed and stays in this state
+  /// until:
+  ///
+  /// - user cancels the poll, results in "clean exit".
+  /// - a rebalance error received from the server, which transitions state machine to
+  ///   the [_resubscribeState].
+  /// - an unhandled error occurs, adds error to the stream.
+  Future _pollState() async {
+    return _poll().catchError(
+      (error) {
+        // Switch to resubscribe state because server is performing rebalance.
+        _resubscriptionNeeded = true;
+      },
+      test: isRebalanceError,
+    ).whenComplete(() {
+      // Check if resubscription is needed in case there were rebalance
+      // errors from either offset commit or heartbeat requests.
+      if (_resubscriptionNeeded) {
+        _logger.fine("switch to resubscribe state");
+        // Switch to resubscribe state.
+        _activeState = _resubscribeState;
+        // Create new stream controller and attach to the stream iterator.
+        // This cancels subscription on existing stream and prevents delivery
+        // of any in-flight events to the listener. It also clears uncommitted
+        // offsets to prevent offset commits during rebalance.
+
+        // Remove onCancel callback on existing controller.
+        _streamController!.onCancel = null;
+        _streamController =
+            StreamController<ConsumerRecords<K, V>>(onCancel: onCancel);
+        _streamIterator!.attachStream(_streamController!.stream);
       }
+    });
+  }
+
+  /// Returns `true` if [error] requires resubscription.
+  bool isRebalanceError(error) =>
+      error is RebalanceInProgressError || error is UnknownMemberIdError;
+
+  /// Internal polling method.
+  Future _poll() async {
+    var offsets = await _fetchOffsets(subscription!);
+    _logger.fine('Polling started from following offsets: ${offsets}');
+    Map<Broker?, List<ConsumerOffset>> leaders =
+        await _fetchPartitionLeaders(subscription!, offsets);
+
+    List<Future> brokerPolls = [];
+    for (var broker in leaders.keys) {
+      brokerPolls.add(_pollBroker(broker, leaders[broker]!));
     }
-    if (batch is BatchEnvelope && batch.items.isNotEmpty) {
-      yield batch;
-      batch = null;
+    await Future.wait(brokerPolls);
+  }
+
+  /// Stores references to consumer records in each polling broker that this
+  /// consumer is currently waiting to be processed.
+  /// The `onCancel` callback acknowledges all of these so that polling can
+  /// shutdown gracefully.
+  final Map<Broker?, ConsumerRecords<K, V>> _waitingRecords = Map();
+
+  Future _pollBroker(Broker? broker, List<ConsumerOffset> initialOffsets) async {
+    Map<TopicPartition?, ConsumerOffset> currentOffsets = Map.fromIterable(
+        initialOffsets,
+        key: (offset) => offset.topicPartition);
+
+    while (true) {
+      if (_isCanceled || _resubscriptionNeeded) {
+        _logger.fine('Stoping poll on $broker.');
+        break;
+      }
+
+      _logger.fine('Sending poll request on $broker');
+      var request =
+          _buildRequest(currentOffsets.values.toList(growable: false));
+      var response = await session.send(request, broker!.host, broker.port);
+
+      var records = recordsFromResponse(response.results);
+
+      _logger
+          .fine('response from $broker has ${records.records.length} records');
+
+      if (records.records.isEmpty) continue; // empty response, continue polling
+
+      for (var rec in records.records) {
+        currentOffsets[rec.topicPartition] =
+            ConsumerOffset(rec.topic, rec.partition, rec.offset, '');
+      }
+
+      _waitingRecords[broker] = records;
+      _streamController!.add(records);
+      await records.future;
     }
   }
 
-  Future<bool> _checkOffsets(FetchResponse response) async {
-    var topicsToReset = Map<String, Set<int>>();
-    for (var result in response.results) {
-      if (result.errorCode == KafkaServerError.OffsetOutOfRange) {
-        kafkaLogger.warning('Consumer: received API error 1 for topic ${result.topicName}:${result.partitionId}');
-        if (!topicsToReset.containsKey(result.topicName)) {
-          topicsToReset[result.topicName] = Set();
-        }
-        topicsToReset[result.topicName]?.add(result.partitionId);
-        kafkaLogger.info('Topics to reset: ${topicsToReset}');
+  ConsumerRecords<K, V> recordsFromResponse(List<FetchResult> results) {
+    var records = results.expand((result) {
+      return result.messages.keys.map((offset) {
+        var message = result.messages[offset]!;
+        var key = keyDeserializer.deserialize(message.key);
+        var value = valueDeserializer.deserialize(message.value);
+        return ConsumerRecord<K, V>(result.topic, result.partition, offset, key,
+            value, message.timestamp);
+      });
+    }).toList(growable: false);
+    return ConsumerRecords<K, V>(records);
+  }
+
+  /// Fetches current consumer offsets from the server.
+  ///
+  /// Checks whether current offsets are valid by comparing to earliest
+  /// available offsets in the topics. Resets current offset if it's value is
+  /// lower than earliest available in the partition.
+  Future<List<ConsumerOffset>> _fetchOffsets(
+      GroupSubscription subscription) async {
+    _logger.finer('Fetching offsets for ${group}');
+    var currentOffsets =
+        await _group.fetchOffsets(subscription.assignment!.partitionsAsList);
+    var offsetMaster = new OffsetMaster(session);
+    var earliestOffsets = await offsetMaster
+        .fetchEarliest(subscription.assignment!.partitionsAsList!);
+
+    List<ConsumerOffset> resetNeeded = [];
+    for (var earliest in earliestOffsets) {
+      // Current consumer offset can be either -1 or a value >= 0, where
+      // `-1` means that no committed offset exists for this partition.
+      //
+      var current = currentOffsets.firstWhere((_) =>
+          _.topic == earliest.topic && _.partition == earliest.partition);
+      if (current.offset + 1 < earliest.offset) {
+        // reset to earliest
+        _logger.warning('Current consumer offset (${current.offset}) is less '
+            'than earliest available for partition (${earliest.offset}). '
+            'This may indicate that consumer missed some records in ${current.topicPartition}. '
+            'Resetting this offset to earliest.');
+        resetNeeded.add(current.copy(
+            offset: earliest.offset - 1, metadata: 'resetToEarliest'));
       }
     }
 
-    if (topicsToReset.isNotEmpty) {
-      switch (onOffsetOutOfRange) {
-        case OffsetOutOfRangeBehavior.throwError:
-          throw new KafkaServerError(1);
-        case OffsetOutOfRangeBehavior.resetToEarliest:
-          await group?.resetOffsetsToEarliest(topicsToReset);
-          break;
-        case OffsetOutOfRangeBehavior.resetToLatest:
-          await group?.resetOffsetsToLatest(topicsToReset);
-          break;
-      }
-      return true;
+    if (resetNeeded.isNotEmpty) {
+      await _group.commitOffsets(resetNeeded, subscription: subscription);
+      return _group.fetchOffsets(subscription.assignment!.partitionsAsList);
     } else {
-      return false;
+      return currentOffsets;
     }
   }
 
-  Future<FetchRequest> _createRequest() async {
-    var offsets = await group?.fetchOffsets(topicPartitions);
-    var request = new FetchRequest(maxWaitTime, minBytes);
-    if (offsets != null) {
-      for (var o in offsets) {
-        request.add(o.topicName, o.partitionId, o.offset + 1);
-      }
+  FetchRequest _buildRequest(List<ConsumerOffset> offsets) {
+    var request = new FetchRequest(DEFAULT_MAX_WAIT_TIME, DEFAULT_MIN_BYTES);
+    for (var offset in offsets) {
+      request.add(offset.topicPartition,
+          new FetchData(offset.offset + 1, requestMaxBytes));
     }
     return request;
   }
+
+  Future<Map<Broker?, List<ConsumerOffset>>> _fetchPartitionLeaders(
+      GroupSubscription subscription, List<ConsumerOffset> offsets) async {
+    var topics = subscription.assignment!.topics;
+    var topicsMeta = await session.metadata!.fetchTopics(topics);
+    var brokerOffsets = offsets
+        .where((_) =>
+            subscription.assignment!.partitionsAsList!.contains(_.topicPartition))
+        .toList(growable: false);
+    return groupBy<Broker?, ConsumerOffset>(brokerOffsets, (_) {
+      var leaderId = topicsMeta[_.topic]!.partitions[_.partition]!.leader;
+      return topicsMeta.brokers[leaderId];
+    });
+  }
+
+  @override
+  Future? unsubscribe() {
+    // TODO: implement unsubscribe
+    return null;
+  }
+
+  @override
+  Future commit() async {
+    // TODO: What should happen in case of an unexpected error in here?
+    // This should probably cancel polling and complete returned future
+    // with this unexpected error.
+    assert(_streamIterator != null);
+    assert(_streamIterator!.current != null);
+    _logger.fine('Committing offsets.');
+    var offsets = _streamIterator!.offsets;
+    if (offsets.isNotEmpty) {
+      return _group
+          .commitOffsets(_streamIterator!.offsets, subscription: _subscription)
+          .catchError((error) {
+        /// It is possible to receive a rebalance error in response to OffsetCommit
+        /// request. We set `_resubscriptionNeeded` to `true` so that next cycle
+        /// of polling can exit and switch to [_resubscribeState].
+        _logger.warning(
+            'Received $error on offset commit. Requiring resubscription.');
+        _resubscriptionNeeded = true;
+      }, test: isRebalanceError).whenComplete(() {
+        _logger.fine('Done committing offsets.');
+
+        /// Clear accumulated offsets regardless of the result of OffsetCommit.
+        /// If commit successeded clearing current offsets is safe.
+        /// If commit failed we either go to resubscribe state which requires re-fetch
+        /// of offsets, or we have unexpected error so we need to shutdown polling and
+        /// cleanup internal state.
+        _streamIterator!.clearOffsets();
+      });
+    }
+  }
+
+  @override
+  void seekToBeginning() {
+    // TODO: implement seekToBeginning
+  }
+
+  @override
+  void seekToEnd() {
+    // TODO: implement seekToEnd
+  }
 }
 
-enum _ProcessingStatus { commit, ack, cancel }
-
-class _ProcessingResult {
-  final _ProcessingStatus status;
-  final String commitMetadata;
-
-  _ProcessingResult.commit(String metadata)
-      : status = _ProcessingStatus.commit,
-        commitMetadata = metadata;
-
-  _ProcessingResult.ack()
-      : status = _ProcessingStatus.ack,
-        commitMetadata = '';
-
-  _ProcessingResult.cancel()
-      : status = _ProcessingStatus.cancel,
-        commitMetadata = '';
-}
-
-/// Envelope for a [Message] used by high-level consumer.
-class MessageEnvelope {
-  /// Topic name of this message.
-  final String topicName;
-
-  /// Partition ID of this message.
-  final int partitionId;
-
-  /// This message's offset
+class ConsumerRecord<K, V> {
+  final String topic;
+  final int partition;
   final int offset;
+  final K key;
+  final V value;
+  final int timestamp;
 
-  /// Actual message received from Kafka broker.
-  final Message message;
+  ConsumerRecord(this.topic, this.partition, this.offset, this.key, this.value,
+      this.timestamp);
 
-  Completer<_ProcessingResult> _completer = new Completer<_ProcessingResult>();
-
-  /// Creates new envelope.
-  MessageEnvelope(this.topicName, this.partitionId, this.offset, this.message);
-
-  Future<_ProcessingResult> get result => _completer.future;
-
-  /// Signals that message has been processed and it's offset can
-  /// be committed (in case of high-level [Consumer] implementation). In case if
-  /// consumerGroup functionality is not used (like in the [Fetcher]) then
-  /// this method's behaviour will be the same as in [ack] method.
-  void commit(String metadata) {
-    _completer.complete(new _ProcessingResult.commit(metadata));
-  }
-
-  /// Signals that message has been processed and we are ready for
-  /// the next one. This method will **not** trigger offset commit if this
-  /// envelope has been created by a high-level [Consumer].
-  void ack() {
-    _completer.complete(new _ProcessingResult.ack());
-  }
-
-  /// Signals to consumer to cancel any further deliveries and close the stream.
-  void cancel() {
-    _completer.complete(new _ProcessingResult.cancel());
-  }
+  TopicPartition get topicPartition => new TopicPartition(topic, partition);
 }
 
-/// StreamController for batch consuming of messages.
-class _BatchStreamController {
-  final StreamController<BatchEnvelope> _controller = new StreamController<BatchEnvelope>();
-  bool _cancelled = false;
+// TODO: bad name, figure out better one
+class ConsumerRecords<K, V> {
+  final Completer<bool> _completer = new Completer();
 
-  bool get canAdd => (_cancelled == false);
+  /// Collection of consumed records.
+  final List<ConsumerRecord<K, V>> records;
 
-  Stream<BatchEnvelope> get stream => _controller.stream;
+  ConsumerRecords(this.records);
 
-  /// Attempts to add [batch] to the stream.
-  /// Returns true if adding event succeeded, false otherwise.
-  bool add(BatchEnvelope batch) {
-    if (canAdd) {
-      _controller.add(batch);
-      return true;
-    }
-    return false;
-  }
+  Future<bool> get future => _completer.future;
 
-  void addError(Object error, [StackTrace? stackTrace]) {
-    _controller.addError(error, stackTrace);
-  }
-
-  void cancel() {
-    _cancelled = true;
-  }
-
-  void close() {
-    _controller.close();
-  }
-}
-
-/// Envelope for message batches used by `Consumer.batchConsume`.
-class BatchEnvelope {
-  final List<MessageEnvelope> items = [];
-
-  Completer<_ProcessingResult> _completer = Completer<_ProcessingResult>();
-
-  Future<_ProcessingResult> get result => _completer.future;
-
-  String commitMetadata = '';
-
-  /// Signals that batch has been processed and it's offsets can
-  /// be committed. In case if
-  /// consumerGroup functionality is not used (like in the [Fetcher]) then
-  /// this method's behaviour will be the same as in [ack] method.
-  void commit(String metadata) {
-    commitMetadata = metadata;
-    _completer.complete(_ProcessingResult.commit(metadata));
-  }
-
-  /// Signals that batch has been processed and we are ready for
-  /// the next one. This method will **not** trigger offset commit if this
-  /// envelope has been created by a high-level [Consumer].
   void ack() {
-    _completer.complete(_ProcessingResult.ack());
+    _completer.complete(true);
   }
 
-  /// Signals to consumer to cancel any further deliveries and close the stream.
-  void cancel() {
-    _completer.complete(_ProcessingResult.cancel());
-  }
-
-  Iterable<ConsumerOffset> get offsetsToCommit {
-    var grouped = Map<TopicPartition, int>();
-    for (var envelope in items) {
-      var key = TopicPartition(envelope.topicName, envelope.partitionId);
-      if (!grouped.containsKey(key)) {
-        grouped[key] = envelope.offset;
-      } else if (grouped[key]! < envelope.offset) {
-        grouped[key] = envelope.offset;
-      }
-    }
-
-    List<ConsumerOffset> offsets = [];
-    for (var key in grouped.keys) {
-      offsets.add(ConsumerOffset(key.topicName, key.partitionId, grouped[key]!, commitMetadata));
-    }
-
-    return offsets;
-  }
+  bool get isCompleted => _completer.isCompleted;
 }
